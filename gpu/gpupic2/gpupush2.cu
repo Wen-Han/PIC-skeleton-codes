@@ -2341,7 +2341,7 @@ extern "C" void cgpuccguard2l(float2 *fxyc, float *fxy, int nx, int ny,
 extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
                             int *ncl, int *ihole, int idimp, int nppmx,
                             int nx, int ny, int mx, int my, int mx1,
-                            int my1, int npbmx, int ntmax, int *irc) {
+                            int my1, int npbmx, int ntmax, int *irc, float *tss) {
 /* Sort Interface for C */
    int mxy1, n, m, ns;
    dim3 dimBlock(nblock_size);
@@ -2349,11 +2349,18 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    m = (mxy1 - 1)/maxgsx + 1;
    n = mxy1 < maxgsx ? mxy1 : maxgsx;
    dim3 dimGrid(n,m);
+   cudaEvent_t start, stop;
+   cudaEventCreate(&start);
+   cudaEventCreate(&stop);
 /* find which particles are leaving tile */
    ns = (nblock_size+9)*sizeof(int);
    crc = cudaGetLastError();
+   cudaEventRecord(start);
    gpuppfnd2l<<<dimGrid,dimBlock,ns>>>(ppart,kpic,ncl,ihole,idimp,nppmx,
                                        nx,ny,mx,my,mx1,my1,ntmax,irc);
+   cudaEventRecord(stop);
+   cudaEventSynchronize(stop);
+   cudaEventElapsedTime(&tss[0], start, stop);
 /* cudaThreadSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
@@ -2363,8 +2370,12 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
 /* buffer particles that are leaving tile and sum ncl */
    ns = 9*sizeof(int);
    crc = cudaGetLastError();
+   cudaEventRecord(start);
    gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
                                        nppmx,mx1,my1,npbmx,ntmax,irc);
+   cudaEventRecord(stop);
+   cudaEventSynchronize(stop);
+   cudaEventElapsedTime(&tss[1], start, stop);
 /* cudaThreadSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
@@ -2374,9 +2385,13 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
 /* copy incoming particles from ppbuff into ppart, update kpic */
    ns = (nblock_size+18)*sizeof(int);
    crc = cudaGetLastError();
+   cudaEventRecord(start);
    gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
                                        idimp,nppmx,mx1,my1,npbmx,ntmax,
                                        irc);
+   cudaEventRecord(stop);
+   cudaEventSynchronize(stop);
+   cudaEventElapsedTime(&tss[2], start, stop);
    cudaThreadSynchronize();
    crc = cudaGetLastError();
    if (crc) {
@@ -2817,7 +2832,7 @@ extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
                               unsigned long *gp_ihole, int *idimp,
                               int *nppmx, int *nx, int *ny, int *mx,
                               int *my, int *mx1, int *my1, int *npbmx,
-                              int *ntmax, unsigned long *gp_irc) {
+                              int *ntmax, unsigned long *gp_irc, float *tss) {
    float *ppart, *ppbuff;
    int *kpic, *ncl, *ihole, *irc;
    ppart = (float *)*gp_ppart;
@@ -2827,7 +2842,7 @@ extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
    ihole = (int *)*gp_ihole;
    irc = (int *)*gp_irc;
    cgpuppord2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*nx,*ny,*mx,
-               *my,*mx1,*my1,*npbmx,*ntmax,irc);
+               *my,*mx1,*my1,*npbmx,*ntmax,irc,tss);
    return;
 }
 
