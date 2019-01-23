@@ -708,7 +708,7 @@ __global__ void gpuccguard2l(float2 fxyc[], float fxy[], int nx, int ny,
 }
 
 /*--------------------------------------------------------------------*/
-__global__ void gpuppfnd2l(float ppart[], int kpic[], int ncl[],
+__global__ void gpuppfnd2l(float ppart[], int kpic[], int ncl[], int ni[],
                            int ihole[], int idimp, int nppmx, int nx,
                            int ny, int mx, int my, int mx1, int my1,
                            int ntmax, int *irc) {
@@ -735,15 +735,15 @@ __global__ void gpuppfnd2l(float ppart[], int kpic[], int ncl[],
    ntmax = size of hole array for particles leaving tiles
    irc = maximum overflow, returned only if error occurs, when irc > 0
 local data                                                            */
-   int mxy1, noff, moff, npp, j, k, ih, ist, nn, mm, nths;
+   int mxy1, noff, moff, npp, j, k, ih, ist, nn, mm;
    float anx, any, edgelx, edgely, edgerx, edgery, dx, dy;
 /* The sizes of the shared memory arrays are as follows: */
 /* int sncl[8], sih[blockDim.x], nh[1];                  */
-   int *sncl, *sih, *nh;
+   int *sncl, *nh, *nc;
    extern __shared__ int shm[];
    sncl = (int *)&shm[0];
-   sih = (int *)&shm[8];
-   nh = (int *)&shm[8+blockDim.x];
+   nh = (int *)&shm[8];
+   //nc = (int *)&shm[9];
    mxy1 = mx1*my1;
    anx = (float) nx;
    any = (float) ny;
@@ -773,6 +773,8 @@ local data                                                            */
       }
       if (threadIdx.x==0) {
          nh[0] = 0;
+         nh[1] = 0;
+         //nc[0] = 0;
       }
 /* synchronize threads */
       __syncthreads();
@@ -781,7 +783,7 @@ local data                                                            */
       noff = 0;
       for (nn = 0; nn < mm; nn++) {
          j = threadIdx.x + blockDim.x*nn;
-         sih[threadIdx.x] = 0;
+         //sih[threadIdx.x] = 0;
          if (j < npp) {
             dx = ppart[j+nppmx*(idimp*k)];
             dy = ppart[j+nppmx*(1+idimp*k)];
@@ -830,24 +832,10 @@ local data                                                            */
 /* using prefix scan for ih to keep holes ordered */
             if (ist > 0) {
                atomicAdd(&sncl[ist-1],1);
-               sih[threadIdx.x] = 1;
-            }
-         }
-/* synchronize threads */
-         __syncthreads();
-         nths = npp - blockDim.x*nn;
-         if (nths > blockDim.x)
-            nths = blockDim.x;
-/* perform local prefix reduction */
-         liscan2(sih,nths);
-         if (j < npp) {
-            ih = sih[threadIdx.x];
-            moff = 0;
-            if (threadIdx.x > 0)
-               moff = sih[threadIdx.x-1];
-/* this thread has a hole present */
-            if (ih > moff) {
-               ih += noff;
+               //sih[threadIdx.x] = 1;
+	       //ih = atomicAdd(&nc[0],1);
+	       ih = atomicAdd(&nh[1],1);
+	       ih += 1;
                if (ih <= ntmax) {
                   ihole[2*(ih+(ntmax+1)*k)] = j + 1;
                   ihole[1+2*(ih+(ntmax+1)*k)] = ist;
@@ -856,10 +844,35 @@ local data                                                            */
                   nh[0] = 1;
                }
             }
+      __syncthreads();  // me added
          }
-/* update number of holes in this iteration */
-         if (nths > 0)
-            noff += sih[nths-1];
+/* synchronize threads */
+//         __syncthreads();
+//         nths = npp - blockDim.x*nn;
+//         if (nths > blockDim.x)
+//            nths = blockDim.x;
+///* perform local prefix reduction */
+//         liscan2(sih,nths);
+//         if (j < npp) {
+//            ih = sih[threadIdx.x];
+//            moff = 0;
+//            if (threadIdx.x > 0)
+//               moff = sih[threadIdx.x-1];
+///* this thread has a hole present */
+//            if (ih > moff) {
+//               ih += noff;
+//               if (ih <= ntmax) {
+//                  ihole[2*(ih+(ntmax+1)*k)] = j + 1;
+//                  ihole[1+2*(ih+(ntmax+1)*k)] = ist;
+//               }
+//               else {
+//                  nh[0] = 1;
+//               }
+//            }
+//         }
+///* update number of holes in this iteration */
+//         if (nths > 0)
+//            noff += sih[nths-1];
 /* synchronize threads */
          __syncthreads();
       }
@@ -871,9 +884,13 @@ local data                                                            */
       }
 /* set error and end of file flag */
       if (threadIdx.x==0) {
+// reset the counter for number of particles in tile k
+         ni[k] = 0;
 /* ihole overflow */
-         ih  = noff;
+         //ih  = nc[0];
+         ih  = nh[1];
          if (nh[0] > 0) {
+		 printf("step1,irc=%d\n",ih);
             *irc = ih;
             ih = -ih;
          }
@@ -884,7 +901,7 @@ local data                                                            */
 }
 
 /*--------------------------------------------------------------------*/
-__global__ void gpuppmov2l(float ppart[], float ppbuff[], int ncl[],
+__global__ void gpuppmov2l(float ppart[], float ppbuff[], int ncl[], int ni[],
                            int ihole[], int idimp, int nppmx, int mx1,
                            int my1, int npbmx, int ntmax, int *irc) {
 /* this subroutine performs second step of a particle sort by x,y grid
@@ -910,13 +927,16 @@ __global__ void gpuppmov2l(float ppart[], float ppbuff[], int ncl[],
    irc = maximum overflow, returned only if error occurs, when irc > 0
 local data                                                            */
    int mxy1, i, j, k, ii, nh, ist, j1, ierr;
+   int kx, ky, kxl, kxr, kk, kl, kr;
 /* The sizes of the shared memory arrays are as follows: */
 /* int sncl[8], ip[1];                                   */
 /* blockDim.x should be >= 8                             */
-   int *sncl, *ip;
+   int *sncl, *ip, *np, *ks;
    extern __shared__ int shm[];
    sncl = (int *)&shm[0];
    ip = (int *)&shm[8];
+   np = (int *)&shm[16];
+   ks = (int *)&shm[24];
    mxy1 = mx1*my1;
    ierr = 0;
 /* k = tile number */
@@ -926,104 +946,6 @@ local data                                                            */
 /* loop over tiles */
    if (k < mxy1) {
 /* find address offset for ordered ppbuff array */
-      if (j < 8) {
-         ist = ncl[j+8*k];
-         sncl[j] = ist;
-      }
-      if (threadIdx.x==0)
-         ip[0] = 0;
-/* synchronize threads */
-      __syncthreads();
-/* perform local prefix reduction */
-      liscan2(sncl,8);
-      if (j < 8)
-         sncl[j] -= ist;
-/* synchronize threads */
-      __syncthreads();
-      nh = ihole[2*(ntmax+1)*k];
-/* loop over particles leaving tile */
-      while (j < nh) {
-/* buffer particles that are leaving tile, in direction order */
-         j1 = ihole[2*(j+1+(ntmax+1)*k)] - 1;
-         ist = ihole[1+2*(j+1+(ntmax+1)*k)];
-         ii = atomicAdd(&sncl[ist-1],1);
-         if (ii < npbmx) {
-            for (i = 0; i < idimp; i++) {
-               ppbuff[ii+npbmx*(i+idimp*k)]
-               = ppart[j1+nppmx*(i+idimp*k)];
-            }
-         }
-         else {
-            ip[0] = 1;
-         }
-         j += blockDim.x;
-      }
-/* synchronize threads */
-      __syncthreads();
-/* write out counters */
-      j = threadIdx.x;
-      if (j < 8) {
-         ncl[j+8*k] = sncl[j];
-      }
-/* set error */
-      if (threadIdx.x==0) {
-         if (ip[0] > 0)
-            ierr = ierr > sncl[7] ? ierr : sncl[7];
-      }
-   }
-/* ppbuff overflow */
-   if (ierr > 0)
-      *irc = ierr;
-   return;
-}
-
-/*--------------------------------------------------------------------*/
-__global__ void gpuppord2l(float ppart[], float ppbuff[], int kpic[],
-                           int ncl[], int ihole[], int idimp, int nppmx,
-                           int mx1, int my1, int npbmx, int ntmax,
-                           int *irc) {
-/* this subroutine performs third step of a particle sort by x,y grid
-   in tiles of mx, my, where incoming particles from other tiles are
-   copied into ppart.
-   linear interpolation, with periodic boundary conditions
-   tiles are assumed to be arranged in 2D linear memory
-   input: all except irc
-   output: ppart, kpic, irc
-   ppart[k][i][n] = i co-ordinate of particle n in tile k 
-   ppbuff[k][i][n] = i co-ordinate of particle n in tile k
-   kpic[k] = number of particles in tile k
-   ncl[k][i] = number of particles going to destination i, tile k
-   ihole[k][:][0] = location of hole in array left by departing particle
-   ihole[k][:][1] = direction destination of particle leaving hole
-   all for tile k
-   ihole[k][0][0] = ih, number of holes left (error, if negative)
-   idimp = size of phase space = 4
-   nppmx = maximum number of particles in tile
-   mx1 = (system length in x direction - 1)/mx + 1
-   my1 = (system length in y direction - 1)/my + 1
-   npbmx = size of buffer array ppbuff
-   ntmax = size of hole array for particles leaving tiles
-   irc = maximum overflow, returned only if error occurs, when irc > 0
-local data                                                            */
-   int mxy1, npp, ncoff, i, j, k, ii, jj, kx, ky, ni, nh;
-   int nn, mm, ll, ip, j1, j2, kxl, kxr, kk, kl, kr;
-   int nths;
-/* The sizes of the shared memory arrays are as follows: */
-/* int ks[8], sip[8], sj[blockDim.x], sj1[1], ist[1];    */
-   int *ks, *sip, *sj, *sj1, *ist;
-   extern __shared__ int shm[];
-   ks = (int *)&shm[0];
-   sip = (int *)&shm[8];
-   sj = (int *)&shm[16];
-   sj1 = (int *)&shm[16+blockDim.x];
-   ist = (int *)&shm[17+blockDim.x];
-   mxy1 = mx1*my1;
-/* k = tile number */
-   k = blockIdx.x + gridDim.x*blockIdx.y;
-/* copy incoming particles from buffer into ppart: update ppart, kpic */
-/* loop over tiles */
-   if (k < mxy1) {
-      npp = kpic[k];
       ky = k/mx1;
 /* loop over tiles in y, assume periodic boundary conditions */
       kk = ky*mx1;
@@ -1055,75 +977,224 @@ local data                                                            */
          ks[5] = kx + kl;
          ks[6] = kxr + kl;
          ks[7] = kxl + kl;
-         sj1[0] = 0;
-         ist[0] = 0;
       }
-/* synchronize threads */
+///* synchronize threads */
       __syncthreads();
-/* find number of incoming particles */
-      kk = 0;
-      ncoff = 0;
-      ip = 0;
-      ii = threadIdx.x;
-      if (ii < 8) {
-         kk = ks[ii];
-         if (ii > 0)
-            ncoff = ncl[ii-1+8*kk];
-         ip = ncl[ii+8*kk] - ncoff;
-         kk = ncoff + idimp*npbmx*kk;
-         sip[ii] = ip;
+      if (j < 8) {
+         ist = ncl[j+8*k];
+         sncl[j] = ist;
+// get the starting address in particle buffer for thread j in tile ks[j]
+	 //atomicAdd(&ni[ks[j]],ist);
+	 np[0] = 0;
       }
+      if (threadIdx.x==0)
+         ip[0] = 0;
 /* synchronize threads */
       __syncthreads();
 /* perform local prefix reduction */
-      liscan2(sip,8);
-      ni = sip[7];
+      liscan2(sncl,8);
+      if (j < 8) {
+// register/allocate the buffer
+         sncl[j] -= ist;
+         
+//	 if (ni[ks[j]] > npbmx)
+//	     ip[0] = 1;
+      }
+/* synchronize threads */
+      __syncthreads();
+      nh = ihole[2*(ntmax+1)*k];
+/* loop over particles leaving tile */
+      while (j < nh) {
+/* buffer particles that are leaving tile, in direction order */
+         j1 = ihole[2*(j+1+(ntmax+1)*k)] - 1;
+         ist = ihole[1+2*(j+1+(ntmax+1)*k)];
+	 if (ist < 1 || ist > 8)
+		 printf("sathoeushaoseun\n");
+	 kk = ks[ist-1];
+         ii = atomicAdd(&ni[kk],1);
+         if (ii < npbmx) {
+            for (i = 0; i < idimp; i++) {
+               ppbuff[ii+npbmx*(i+idimp*kk)]
+               = ppart[j1+nppmx*(i+idimp*k)];
+            }
+         }
+         else {
+            ip[0] = 1;
+         }
+         j += blockDim.x;
+      __syncthreads();  // me added
+      }
+/* synchronize threads */
+      __syncthreads();
+/* write out counters */
+      j = threadIdx.x;
+      if (j < 8) {
+         ncl[j+8*k] = sncl[j];
+      }
+      __syncthreads();  // me added
+/* set error */
+      if (threadIdx.x==0) {
+	if (ni[0] != nh)
+		printf("ooooooooooooooooooooo\n");
+         if (ip[0] > 0)
+            ierr = ierr > sncl[7] ? ierr : sncl[7];
+      }
+   }
+/* ppbuff overflow */
+   if (ierr > 0){
+		 printf("step2,irc=%d",ierr);
+      *irc = ierr;
+   }
+   return;
+}
+
+/*--------------------------------------------------------------------*/
+__global__ void gpuppord2l(float ppart[], float ppbuff[], int kpic[],
+                           int ncl[], int ni[], int ihole[], int idimp, int nppmx,
+                           int mx1, int my1, int npbmx, int ntmax,
+                           int *irc) {
+/* this subroutine performs third step of a particle sort by x,y grid
+   in tiles of mx, my, where incoming particles from other tiles are
+   copied into ppart.
+   linear interpolation, with periodic boundary conditions
+   tiles are assumed to be arranged in 2D linear memory
+   input: all except irc
+   output: ppart, kpic, irc
+   ppart[k][i][n] = i co-ordinate of particle n in tile k 
+   ppbuff[k][i][n] = i co-ordinate of particle n in tile k
+   kpic[k] = number of particles in tile k
+   ncl[k][i] = number of particles going to destination i, tile k
+   ihole[k][:][0] = location of hole in array left by departing particle
+   ihole[k][:][1] = direction destination of particle leaving hole
+   all for tile k
+   ihole[k][0][0] = ih, number of holes left (error, if negative)
+   idimp = size of phase space = 4
+   nppmx = maximum number of particles in tile
+   mx1 = (system length in x direction - 1)/mx + 1
+   my1 = (system length in y direction - 1)/my + 1
+   npbmx = size of buffer array ppbuff
+   ntmax = size of hole array for particles leaving tiles
+   irc = maximum overflow, returned only if error occurs, when irc > 0
+local data                                                            */
+   int mxy1, npp, ncoff, i, j, k, ii, jj, nh;
+   int nn, mm, ll, ip, j1, j2, kk;
+   int nths;
+/* The sizes of the shared memory arrays are as follows: */
+/* int ks[8], sip[8], sj[blockDim.x], sj1[1], ist[1];    */
+   int *sj, *ist;
+   extern __shared__ int shm[];
+   sj = (int *)&shm[0];
+   ist = (int *)&shm[1+blockDim.x];
+   mxy1 = mx1*my1;
+/* k = tile number */
+   k = blockIdx.x + gridDim.x*blockIdx.y;
+/* copy incoming particles from buffer into ppart: update ppart, kpic */
+/* loop over tiles */
+   if (k < mxy1) {
+      npp = kpic[k];
+//      ky = k/mx1;
+///* loop over tiles in y, assume periodic boundary conditions */
+//      kk = ky*mx1;
+///* find tile above */
+//      kl = ky - 1;
+//      if (kl < 0)
+//         kl += my1;
+//      kl = kl*mx1;
+///* find tile below */
+//      kr = ky + 1;
+//      if (kr >= my1)
+//         kr -= my1;
+//      kr = kr*mx1;
+///* loop over tiles in x, assume periodic boundary conditions */
+//      kx = k - ky*mx1;
+//      kxl = kx - 1;
+//      if (kxl < 0)
+//         kxl += mx1;
+//      kxr = kx + 1;
+//      if (kxr >= mx1)
+//         kxr -= mx1;
+///* find tile number for different directions */
+//      if (threadIdx.x==0) {
+//         ks[0] = kxr + kk;
+//         ks[1] = kxl + kk;
+//         ks[2] = kx + kr;
+//         ks[3] = kxr + kr;
+//         ks[4] = kxl + kr;
+//         ks[5] = kx + kl;
+//         ks[6] = kxr + kl;
+//         ks[7] = kxl + kl;
+//         sj1[0] = 0;
+//         ist[0] = 0;
+//      }
+///* synchronize threads */
+//      __syncthreads();
+///* find number of incoming particles */
+//      kk = 0;
+//      ncoff = 0;
+//      ip = 0;
+//      ii = threadIdx.x;
+//      if (ii < 8) {
+//         kk = ks[ii];
+//         if (ii > 0)
+//            ncoff = ncl[ii-1+8*kk];
+//         ip = ncl[ii+8*kk] - ncoff;
+//         kk = ncoff + idimp*npbmx*kk;
+//         sip[ii] = ip;
+//      }
+///* synchronize threads */
+//      __syncthreads();
+///* perform local prefix reduction */
+//      liscan2(sip,8);
+//      ni = sip[7];
 /* loop over directions */
       nh = ihole[2*(ntmax+1)*k];
       j1 = 0;
-      mm = (ni - 1)/(int) blockDim.x + 1;
-      for (nn = 0; nn < mm; nn++) {
-         j = threadIdx.x + blockDim.x*nn;
-         sj[threadIdx.x] = 0;
-         if (threadIdx.x==0)
-            sj[0] = sj1[0];
+ //     mm = (ni[k] - 1)/(int) blockDim.x + 1;
+      if (threadIdx.x==0)
+         ist[0] = 0;
+//      for (nn = 0; nn < mm; nn++) {
+      j = threadIdx.x;
+//         sj[threadIdx.x] = 0;
+//         if (threadIdx.x==0)
+//            sj[0] = sj1[0];
 /* synchronize threads */
          __syncthreads();
-/* calculate offset for reading from particle buffer */
-         if (ii < 8) {
-/* mark next location where direction ii changes */
-            jj = sip[ii] - blockDim.x*nn;
-            if ((jj >= 0) && (jj < blockDim.x)) {
-               if (ip > 0)
-                  sj[jj] -= kk + ip;
-            }
-         }
-/* synchronize threads */
-         __syncthreads();
-/* calculate offset for reading from particle buffer */
-         if (ii < 8) {
-/* mark location where direction ii starts */
-            jj -= ip;
-            if ((jj >= 0) && (jj < blockDim.x)) {
-               if (ip > 0)
-                  sj[jj] += kk;
-            }
-         }
-         nths = ni - blockDim.x*nn;
-         if (nths > blockDim.x)
-            nths = blockDim.x;
-/* synchronize threads */
-         __syncthreads();
-/* perform local prefix reduction */
-         liscan2(sj,nths);
-/* save last value for next time */
-         if (threadIdx.x==0) {
-            jj = 0;
-            if (nths > 0)
-               jj = sj[nths-1];
-            sj1[0] = jj;
-         }
-         if (j < ni) {
+///* calculate offset for reading from particle buffer */
+//         if (ii < 8) {
+///* mark next location where direction ii changes */
+//            jj = sip[ii] - blockDim.x*nn;
+//            if ((jj >= 0) && (jj < blockDim.x)) {
+//               if (ip > 0)
+//                  sj[jj] -= kk + ip;
+//            }
+//         }
+///* synchronize threads */
+//         __syncthreads();
+///* calculate offset for reading from particle buffer */
+//         if (ii < 8) {
+///* mark location where direction ii starts */
+//            jj -= ip;
+//            if ((jj >= 0) && (jj < blockDim.x)) {
+//               if (ip > 0)
+//                  sj[jj] += kk;
+//            }
+//         }
+//         nths = ni - blockDim.x*nn;
+//         if (nths > blockDim.x)
+//            nths = blockDim.x;
+///* synchronize threads */
+//         __syncthreads();
+///* perform local prefix reduction */
+//         liscan2(sj,nths);
+///* save last value for next time */
+//         if (threadIdx.x==0) {
+//            jj = 0;
+//            if (nths > 0)
+//               jj = sj[nths-1];
+//            sj1[0] = jj;
+//         }
+      nn = ni[k];
+         while (j < nn) {
 /* insert incoming particles into holes */
             if (j < nh) {
                j1 = ihole[2*(j+1+(ntmax+1)*k)] - 1;
@@ -1133,25 +1204,28 @@ local data                                                            */
                j1 = npp + (j - nh);
             }
             if (j1 < nppmx) {
-               jj = sj[threadIdx.x];
+               //jj = sj[threadIdx.x];
                for (i = 0; i < idimp; i++) {
                   ppart[j1+nppmx*(i+idimp*k)]
-                  = ppbuff[j+jj+npbmx*i];
+                  = ppbuff[j+nppmx*(i+idimp*k)];
+                  //= ppbuff[j+jj+npbmx*i];
                 }
             }
             else {
                ist[0] = 1;
             }
+	    j += blockDim.x; 
+      __syncthreads();  // me added
          }
 /* synchronize threads */
          __syncthreads();
-      }
+//      }
 /* update particle number if all holes have been filled */
-      jj = ni - nh;
+      jj = ni[k] - nh;
       if (jj > 0)
          npp += jj;
 /* fill up remaining holes in particle array with particles from end */
-      ip = nh - ni;
+      ip = nh - ni[k];
       if (ip > 0) {
          mm = (ip - 1)/(int) blockDim.x + 1;
          kk = 0;
@@ -1212,7 +1286,7 @@ local data                                                            */
             j2 = 0;
             if (j < ip) {
                j1 = npp - j - 1;
-               jj = threadIdx.x + ni + kk + 1;
+               jj = threadIdx.x + ni[k] + kk + 1;
                if (jj <= nh)
                   j2 = ihole[2*(jj+(ntmax+1)*k)] - 1;
             }
@@ -1237,8 +1311,10 @@ local data                                                            */
 /* set error and update particle */
       if (threadIdx.x==0) {
 /* ppart overflow */
-         if (ist[0] > 0)
+         if (ist[0] > 0){
+		 printf("step3,irc=%d",npp);
             *irc = npp;
+	 }
          kpic[k] = npp;
       }
    }
@@ -2339,7 +2415,7 @@ extern "C" void cgpuccguard2l(float2 *fxyc, float *fxy, int nx, int ny,
 
 /*--------------------------------------------------------------------*/
 extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
-                            int *ncl, int *ihole, int idimp, int nppmx,
+                            int *ncl, int *ni, int *ihole, int idimp, int nppmx,
                             int nx, int ny, int mx, int my, int mx1,
                             int my1, int npbmx, int ntmax, int *irc, float *tss) {
 /* Sort Interface for C */
@@ -2350,17 +2426,20 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    n = mxy1 < maxgsx ? mxy1 : maxgsx;
    dim3 dimGrid(n,m);
    cudaEvent_t start, stop;
+   float millisecond = 0.0;
    cudaEventCreate(&start);
    cudaEventCreate(&stop);
 /* find which particles are leaving tile */
    ns = (nblock_size+9)*sizeof(int);
    crc = cudaGetLastError();
    cudaEventRecord(start);
-   gpuppfnd2l<<<dimGrid,dimBlock,ns>>>(ppart,kpic,ncl,ihole,idimp,nppmx,
+   gpuppfnd2l<<<dimGrid,dimBlock,ns>>>(ppart,kpic,ncl,ni,ihole,idimp,nppmx,
                                        nx,ny,mx,my,mx1,my1,ntmax,irc);
    cudaEventRecord(stop);
    cudaEventSynchronize(stop);
-   cudaEventElapsedTime(&tss[0], start, stop);
+   cudaEventElapsedTime(&millisecond, start, stop);
+   tss[0] += millisecond;
+   //   printf("gpuppfnd2l time=%f\n",tss[0]);
 /* cudaThreadSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
@@ -2371,11 +2450,13 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    ns = 9*sizeof(int);
    crc = cudaGetLastError();
    cudaEventRecord(start);
-   gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
+   gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ni,ihole,idimp,
                                        nppmx,mx1,my1,npbmx,ntmax,irc);
    cudaEventRecord(stop);
    cudaEventSynchronize(stop);
-   cudaEventElapsedTime(&tss[1], start, stop);
+   cudaEventElapsedTime(&millisecond, start, stop);
+   tss[1] += millisecond;
+   //   printf("gpuppmov2l time=%f\n",tss[1]);
 /* cudaThreadSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
@@ -2386,12 +2467,14 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    ns = (nblock_size+18)*sizeof(int);
    crc = cudaGetLastError();
    cudaEventRecord(start);
-   gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
+   gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ni,ihole,
                                        idimp,nppmx,mx1,my1,npbmx,ntmax,
                                        irc);
    cudaEventRecord(stop);
    cudaEventSynchronize(stop);
-   cudaEventElapsedTime(&tss[2], start, stop);
+   cudaEventElapsedTime(&millisecond, start, stop);
+   tss[2] += millisecond;
+   //   printf("gpuppord2l time=%f\n",tss[2]);
    cudaThreadSynchronize();
    crc = cudaGetLastError();
    if (crc) {
@@ -2401,43 +2484,43 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    return;
 }
 
-/*--------------------------------------------------------------------*/
-extern "C" void cgpuppordf2l(float *ppart, float *ppbuff, int *kpic,
-                             int *ncl, int *ihole, int idimp, int nppmx,
-                             int mx1, int my1, int npbmx, int ntmax,
-                             int *irc) {
-/* Sort Interface for C */
-   int mxy1, n, m, ns;
-   dim3 dimBlock(nblock_size);
-   mxy1 = mx1*my1;
-   m = (mxy1 - 1)/maxgsx + 1;
-   n = mxy1 < maxgsx ? mxy1 : maxgsx;
-   dim3 dimGrid(n,m);
-/* buffer particles that are leaving tile and sum ncl */
-   ns = 9*sizeof(int);
-   crc = cudaGetLastError();
-   gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
-                                       nppmx,mx1,my1,npbmx,ntmax,irc);
-/* cudaThreadSynchronize(); */
-   crc = cudaGetLastError();
-   if (crc) {
-      printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
-      exit(1);
-   }
-/* copy incoming particles from ppbuff into ppart, update kpic */
-   ns = (nblock_size+18)*sizeof(int);
-   crc = cudaGetLastError();
-   gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
-                                       idimp,nppmx,mx1,my1,npbmx,ntmax,
-                                       irc);
-   cudaThreadSynchronize();
-   crc = cudaGetLastError();
-   if (crc) {
-      printf("gpuppord2l error=%d:%s\n",crc,cudaGetErrorString(crc));
-      exit(1);
-   }
-   return;
-}
+///*--------------------------------------------------------------------*/
+//extern "C" void cgpuppordf2l(float *ppart, float *ppbuff, int *kpic,
+//                             int *ncl, int *ihole, int idimp, int nppmx,
+//                             int mx1, int my1, int npbmx, int ntmax,
+//                             int *irc) {
+///* Sort Interface for C */
+//   int mxy1, n, m, ns;
+//   dim3 dimBlock(nblock_size);
+//   mxy1 = mx1*my1;
+//   m = (mxy1 - 1)/maxgsx + 1;
+//   n = mxy1 < maxgsx ? mxy1 : maxgsx;
+//   dim3 dimGrid(n,m);
+///* buffer particles that are leaving tile and sum ncl */
+//   ns = 9*sizeof(int);
+//   crc = cudaGetLastError();
+//   gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
+//                                       nppmx,mx1,my1,npbmx,ntmax,irc);
+///* cudaThreadSynchronize(); */
+//   crc = cudaGetLastError();
+//   if (crc) {
+//      printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
+//      exit(1);
+//   }
+///* copy incoming particles from ppbuff into ppart, update kpic */
+//   ns = (nblock_size+18)*sizeof(int);
+//   crc = cudaGetLastError();
+//   gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
+//                                       idimp,nppmx,mx1,my1,npbmx,ntmax,
+//                                       irc);
+//   cudaThreadSynchronize();
+//   crc = cudaGetLastError();
+//   if (crc) {
+//      printf("gpuppord2l error=%d:%s\n",crc,cudaGetErrorString(crc));
+//      exit(1);
+//   }
+//   return;
+//}
 
 /*--------------------------------------------------------------------*/
 extern "C"  void cgpupois22t(float2 *qt, float2 *fxyt, float2 *ffct,
@@ -2824,48 +2907,48 @@ extern "C" void cgpuccguard2l_(unsigned long *gp_fxyc,
    return;
 }
 
-/*--------------------------------------------------------------------*/
-extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
-                              unsigned long *gp_ppbuff,
-                              unsigned long *gp_kpic,
-                              unsigned long *gp_ncl,
-                              unsigned long *gp_ihole, int *idimp,
-                              int *nppmx, int *nx, int *ny, int *mx,
-                              int *my, int *mx1, int *my1, int *npbmx,
-                              int *ntmax, unsigned long *gp_irc, float *tss) {
-   float *ppart, *ppbuff;
-   int *kpic, *ncl, *ihole, *irc;
-   ppart = (float *)*gp_ppart;
-   ppbuff = (float *)*gp_ppbuff;
-   kpic = (int *)*gp_kpic;
-   ncl = (int *)*gp_ncl;
-   ihole = (int *)*gp_ihole;
-   irc = (int *)*gp_irc;
-   cgpuppord2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*nx,*ny,*mx,
-               *my,*mx1,*my1,*npbmx,*ntmax,irc,tss);
-   return;
-}
+///*--------------------------------------------------------------------*/
+//extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
+//                              unsigned long *gp_ppbuff,
+//                              unsigned long *gp_kpic,
+//                              unsigned long *gp_ncl,
+//                              unsigned long *gp_ihole, int *idimp,
+//                              int *nppmx, int *nx, int *ny, int *mx,
+//                              int *my, int *mx1, int *my1, int *npbmx,
+//                              int *ntmax, unsigned long *gp_irc, float *tss) {
+//   float *ppart, *ppbuff;
+//   int *kpic, *ncl, *ihole, *irc;
+//   ppart = (float *)*gp_ppart;
+//   ppbuff = (float *)*gp_ppbuff;
+//   kpic = (int *)*gp_kpic;
+//   ncl = (int *)*gp_ncl;
+//   ihole = (int *)*gp_ihole;
+//   irc = (int *)*gp_irc;
+//   cgpuppord2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*nx,*ny,*mx,
+//               *my,*mx1,*my1,*npbmx,*ntmax,irc,tss);
+//   return;
+//}
 
-/*--------------------------------------------------------------------*/
-extern "C" void cgpuppordf2l_(unsigned long *gp_ppart,
-                              unsigned long *gp_ppbuff,
-                              unsigned long *gp_kpic,
-                              unsigned long *gp_ncl,
-                              unsigned long *gp_ihole, int *idimp,
-                              int *nppmx, int *mx1, int *my1, int *npbmx,
-                              int *ntmax, unsigned long *gp_irc) {
-   float *ppart, *ppbuff;
-   int *kpic, *ncl, *ihole, *irc;
-   ppart = (float *)*gp_ppart;
-   ppbuff = (float *)*gp_ppbuff;
-   kpic = (int *)*gp_kpic;
-   ncl = (int *)*gp_ncl;
-   ihole = (int *)*gp_ihole;
-   irc = (int *)*gp_irc;
-   cgpuppordf2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*mx1,*my1,
-                *npbmx,*ntmax,irc);
-   return;
-}
+///*--------------------------------------------------------------------*/
+//extern "C" void cgpuppordf2l_(unsigned long *gp_ppart,
+//                              unsigned long *gp_ppbuff,
+//                              unsigned long *gp_kpic,
+//                              unsigned long *gp_ncl,
+//                              unsigned long *gp_ihole, int *idimp,
+//                              int *nppmx, int *mx1, int *my1, int *npbmx,
+//                              int *ntmax, unsigned long *gp_irc) {
+//   float *ppart, *ppbuff;
+//   int *kpic, *ncl, *ihole, *irc;
+//   ppart = (float *)*gp_ppart;
+//   ppbuff = (float *)*gp_ppbuff;
+//   kpic = (int *)*gp_kpic;
+//   ncl = (int *)*gp_ncl;
+//   ihole = (int *)*gp_ihole;
+//   irc = (int *)*gp_irc;
+//   cgpuppordf2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*mx1,*my1,
+//                *npbmx,*ntmax,irc);
+//   return;
+//}
 
 /*--------------------------------------------------------------------*/
 extern "C"  void cgpupois22t_(unsigned long *gp_qt, 

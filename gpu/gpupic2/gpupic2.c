@@ -15,9 +15,10 @@ void dtimer(double *time, struct timeval *itime, int icntrl);
 int main(int argc, char *argv[]) {
 /* indx/indy = exponent which determines grid points in x/y direction: */
 /* nx = 2**indx, ny = 2**indy */
-   int indx =   9, indy =   9;
+   int indx =   4, indy =   4;
 /* npx/npy = number of electrons distributed in x/y direction */
-   int npx =  3072, npy =   3072;
+   //int npx =  3072, npy =   3072;
+   int npx =  96, npy =   96;
 /* ndim = number of velocity coordinates = 2 */
    int ndim = 2;
 /* tend = time at end of simulation, in units of plasma frequency */
@@ -86,7 +87,7 @@ int main(int argc, char *argv[]) {
    int *g_kpic = NULL;
 /* g_ncl = number of particles departing tile in each direction */
 /* g_ihole = location/destination of each particle departing tile */
-   int *g_ncl = NULL, *g_ihole = NULL;
+   int *g_ncl = NULL, *g_ihole = NULL, *g_ni = NULL;
 /* g_sum = scratch array for energy sum reductions */
    float *g_sum = NULL;
 /* g_irc = error code (returned only if error occurs) */
@@ -105,6 +106,7 @@ int main(int argc, char *argv[]) {
    struct timeval itime;
    double dtime;
    float tdpost = 0.0, tguard = 0.0, tfft = 0.0, tfield = 0.0;
+   float tsortstep[3] = {0.0,0.0,0.0};
    float tpush = 0.0, tsort = 0.0;
 
 /* initialize scalars for standard code */
@@ -200,6 +202,7 @@ int main(int argc, char *argv[]) {
    gpu_fallocate(&g_ppbuff,npbmx*idimp*mxy1,&irc);
    gpu_iallocate(&g_kpic,mxy1,&irc);
    gpu_iallocate(&g_ncl,8*mxy1,&irc);
+   gpu_iallocate(&g_ni,mxy1,&irc);
    gpu_iallocate(&g_ihole,2*(ntmax+1)*mxy1,&irc);
    gpu_iallocate(&g_irc,1,&irc);
    if (irc != 0) {
@@ -230,6 +233,7 @@ int main(int argc, char *argv[]) {
 L500: if (nloop <= ntime)
          goto L2000;
 /*    printf("ntime = %i\n",ntime); */
+      printf("ntime = %i\n",ntime); 
 
 /* deposit charge with GPU code: updates g_qe */
       dtimer(&dtime,&itime,-1);
@@ -300,8 +304,8 @@ L500: if (nloop <= ntime)
 /* reorder particles by tile with GPU code: */
       dtimer(&dtime,&itime,-1);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, g_ihole,and g_irc */
-      cgpuppord2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0,
-                  nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc);
+      cgpuppord2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ni,g_ihole,idimp,nppmx0,
+                  nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc,tsortstep);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, and g_irc */
 /*    cgpuppordf2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0, */
 /*                 mx1,my1,npbmx,ntmax,g_irc);                         */
@@ -351,6 +355,8 @@ L2000:
    printf("fft time = %f\n",tfft);
    printf("push time = %f\n",tpush);
    printf("sort time = %f\n",tsort);
+   printf("sort step 1 time = %f, sort step 2 time = %f, sort step 3 time = %f\n",
+		   0.001*tsortstep[0],0.001*tsortstep[1],0.001*tsortstep[2]);
    tfield += tguard + tfft;
    printf("total solver time = %f\n",tfield);
    time = tdpost + tpush + tsort;
@@ -373,6 +379,7 @@ L2000:
    gpu_deallocate((void *)g_irc,&irc);
    gpu_deallocate((void *)g_ihole,&irc);
    gpu_deallocate((void *)g_ncl,&irc);
+   gpu_deallocate((void *)g_ni,&irc);
    gpu_deallocate((void *)g_kpic,&irc);
    gpu_deallocate((void *)g_sum,&irc);
    gpu_deallocate((void *)g_we,&irc);
