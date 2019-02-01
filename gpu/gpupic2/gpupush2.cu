@@ -774,6 +774,8 @@ local data                                                            */
       if (threadIdx.x==0) {
          nh[0] = 0;
          nh[1] = 0;
+// reset the counter for number of particles comming in tile k
+         ni[k] = 0;
          //nc[0] = 0;
       }
 /* synchronize threads */
@@ -844,7 +846,6 @@ local data                                                            */
                   nh[0] = 1;
                }
             }
-      __syncthreads();  // me added
          }
 /* synchronize threads */
 //         __syncthreads();
@@ -884,8 +885,6 @@ local data                                                            */
       }
 /* set error and end of file flag */
       if (threadIdx.x==0) {
-// reset the counter for number of particles in tile k
-         ni[k] = 0;
 /* ihole overflow */
          //ih  = nc[0];
          ih  = nh[1];
@@ -941,7 +940,6 @@ local data                                                            */
    ierr = 0;
 /* k = tile number */
    k = blockIdx.x + gridDim.x*blockIdx.y;
-   j = threadIdx.x;
 /* buffer particles that are leaving tile: update ppbuff, ncl */
 /* loop over tiles */
    if (k < mxy1) {
@@ -980,6 +978,7 @@ local data                                                            */
       }
 ///* synchronize threads */
       __syncthreads();
+      j = threadIdx.x;
       if (j < 8) {
          ist = ncl[j+8*k];
          sncl[j] = ist;
@@ -1008,9 +1007,9 @@ local data                                                            */
 /* buffer particles that are leaving tile, in direction order */
          j1 = ihole[2*(j+1+(ntmax+1)*k)] - 1;
          ist = ihole[1+2*(j+1+(ntmax+1)*k)];
-	 if (ist < 1 || ist > 8)
-		 printf("sathoeushaoseun\n");
 	 kk = ks[ist-1];
+	 if (kk < 0 || kk > mxy1 || kk == k)
+		 printf("sathoeushaoseun\n");
          ii = atomicAdd(&ni[kk],1);
          if (ii < npbmx) {
             for (i = 0; i < idimp; i++) {
@@ -1022,7 +1021,6 @@ local data                                                            */
             ip[0] = 1;
          }
          j += blockDim.x;
-      __syncthreads();  // me added
       }
 /* synchronize threads */
       __syncthreads();
@@ -1031,11 +1029,8 @@ local data                                                            */
       if (j < 8) {
          ncl[j+8*k] = sncl[j];
       }
-      __syncthreads();  // me added
 /* set error */
       if (threadIdx.x==0) {
-	if (ni[0] != nh)
-		printf("ooooooooooooooooooooo\n");
          if (ip[0] > 0)
             ierr = ierr > sncl[7] ? ierr : sncl[7];
       }
@@ -1207,7 +1202,7 @@ local data                                                            */
                //jj = sj[threadIdx.x];
                for (i = 0; i < idimp; i++) {
                   ppart[j1+nppmx*(i+idimp*k)]
-                  = ppbuff[j+nppmx*(i+idimp*k)];
+                  = ppbuff[j+npbmx*(i+idimp*k)];
                   //= ppbuff[j+jj+npbmx*i];
                 }
             }
@@ -1215,7 +1210,6 @@ local data                                                            */
                ist[0] = 1;
             }
 	    j += blockDim.x; 
-      __syncthreads();  // me added
          }
 /* synchronize threads */
          __syncthreads();
