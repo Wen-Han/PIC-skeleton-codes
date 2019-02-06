@@ -23,7 +23,7 @@ void cgpucaguard2l(float complex qc[], float q[], int nx, int ny,
 void cgpuccguard2l(float complex fxyc[], float fxy[], int nx, int ny,
                    int nxe, int nye, int nxvh, int nyv);
 
-void cgpuppord2l(float ppart[], float ppbuff[], int kpic[], int ncl[], int ni[],
+void cgpuppord2l(float ppart[], float ppbuff[], int kpic[], int ncl[],
                  int ihole[], int idimp, int nppmx, int nx, int ny,
                  int mx, int my, int mx1, int my1, int npbmx, int ntmax,
                  int *irc, float tss[]);
