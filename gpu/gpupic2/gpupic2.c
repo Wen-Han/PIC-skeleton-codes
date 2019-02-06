@@ -105,7 +105,6 @@ int main(int argc, char *argv[]) {
    struct timeval itime;
    double dtime;
    float tdpost = 0.0, tguard = 0.0, tfft = 0.0, tfield = 0.0;
-   float tsortstep[3] = {0.0,0.0,0.0};
    float tpush = 0.0, tsort = 0.0;
 
 /* initialize scalars for standard code */
@@ -305,7 +304,7 @@ L500: if (nloop <= ntime)
       dtimer(&dtime,&itime,-1);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, g_ihole,and g_irc */
       cgpuppord2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0,
-                  nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc,tsortstep);
+                  nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, and g_irc */
 /*    cgpuppordf2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0, */
 /*                 mx1,my1,npbmx,ntmax,g_irc);                         */
