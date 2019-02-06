@@ -2338,7 +2338,7 @@ extern "C" void cgpuccguard2l(float2 *fxyc, float *fxy, int nx, int ny,
 }
 
 /*--------------------------------------------------------------------*/
-extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
+extern "C" void __cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
                             int *ncl, int *ihole, int idimp, int nppmx,
                             int nx, int ny, int mx, int my, int mx1,
                             int my1, int npbmx, int ntmax, int *irc) {
@@ -2809,27 +2809,27 @@ extern "C" void cgpuccguard2l_(unsigned long *gp_fxyc,
    return;
 }
 
-/*--------------------------------------------------------------------*/
-extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
-                              unsigned long *gp_ppbuff,
-                              unsigned long *gp_kpic,
-                              unsigned long *gp_ncl,
-                              unsigned long *gp_ihole, int *idimp,
-                              int *nppmx, int *nx, int *ny, int *mx,
-                              int *my, int *mx1, int *my1, int *npbmx,
-                              int *ntmax, unsigned long *gp_irc) {
-   float *ppart, *ppbuff;
-   int *kpic, *ncl, *ihole, *irc;
-   ppart = (float *)*gp_ppart;
-   ppbuff = (float *)*gp_ppbuff;
-   kpic = (int *)*gp_kpic;
-   ncl = (int *)*gp_ncl;
-   ihole = (int *)*gp_ihole;
-   irc = (int *)*gp_irc;
-   cgpuppord2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*nx,*ny,*mx,
-               *my,*mx1,*my1,*npbmx,*ntmax,irc);
-   return;
-}
+///*--------------------------------------------------------------------*/
+//extern "C" void  cgpuppord2l_(unsigned long *gp_ppart,
+//                              unsigned long *gp_ppbuff,
+//                              unsigned long *gp_kpic,
+//                              unsigned long *gp_ncl,
+//                              unsigned long *gp_ihole, int *idimp,
+//                              int *nppmx, int *nx, int *ny, int *mx,
+//                              int *my, int *mx1, int *my1, int *npbmx,
+//                              int *ntmax, unsigned long *gp_irc) {
+//   float *ppart, *ppbuff;
+//   int *kpic, *ncl, *ihole, *irc;
+//   ppart = (float *)*gp_ppart;
+//   ppbuff = (float *)*gp_ppbuff;
+//   kpic = (int *)*gp_kpic;
+//   ncl = (int *)*gp_ncl;
+//   ihole = (int *)*gp_ihole;
+//   irc = (int *)*gp_irc;
+//   cgpuppord2l(ppart,ppbuff,kpic,ncl,ihole,*idimp,*nppmx,*nx,*ny,*mx,
+//               *my,*mx1,*my1,*npbmx,*ntmax,irc);
+//   return;
+//}
 
 /*--------------------------------------------------------------------*/
 extern "C" void cgpuppordf2l_(unsigned long *gp_ppart,
