@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
    float ax = .912871, ay = .912871;
 /* idimp = number of particle coordinates = 4 */
 /* ipbc = particle boundary condition: 1 = periodic */
-   int idimp = 5, ipbc = 1;
+   int idimp = 4, ipbc = 1;
 /* wke/we/wt = particle kinetic/electric field/total energy */
    float wke = 0.0, we = 0.0, wt = 0.0;
 /* mx/my = number of grids in x/y in sorting tiles */
@@ -81,12 +81,12 @@ int main(int argc, char *argv[]) {
    float *g_wke = NULL, *g_we = NULL;
 /* g_ppart = tiled particle array */
 /* g_ppbuff = buffer array for reordering tiled particle array */
-   float *g_ppart = NULL, *g_ppbuff = NULL, *ppbuff = NULL;
+   float *g_ppart = NULL, *g_ppbuff = NULL;
 /* g_kpic = number of particles in each tile */
    int *g_kpic = NULL;
 /* g_ncl = number of particles departing tile in each direction */
 /* g_ihole = location/destination of each particle departing tile */
-   int *g_ncl = NULL, *g_ihole = NULL, *ihole=NULL, *ncl=NULL;
+   int *g_ncl = NULL, *g_ihole = NULL;
 /* g_sum = scratch array for energy sum reductions */
    float *g_sum = NULL;
 /* g_irc = error code (returned only if error occurs) */
@@ -132,10 +132,7 @@ int main(int argc, char *argv[]) {
    kpic = (int *) malloc(mxy1*sizeof(int));
    qt = (float complex *) malloc(ny*nxh1*sizeof(float complex));
    fxyt = (float complex *) malloc(ny*ndim*nxh1*sizeof(float complex));
-   ihole = (int *) malloc(2*(ntmax+1)*mxy1*sizeof(int));
-   ppbuff = (float *) malloc(npbmx*idimp*mxy1*sizeof(float));
 
-   ncl = (int *) malloc(8*mxy1*sizeof(int));
 /* set up GPU */
    irc = 0;
    gpu_setgbsize(nblock);
@@ -186,13 +183,6 @@ int main(int argc, char *argv[]) {
 /* initialize electrons */
    cdistr2(part,vtx,vty,vx0,vy0,npx,npy,idimp,np,nx,ny,ipbc);
 
-//   for (int k = 0; k < npy; k++) {
-//      int k1 = idimp*npx*k;
-//      for (int j = 0; j < npx; j++) {
-//         printf("x=%.2f,y=%.2f\t",part[idimp*j+k1],part[1+idimp*j+k1]);
-//      }
-//      printf("\n");
-//   }
 /* find number of particles in each of mx, my tiles: updates kpic, nppmx */
    cdblkp2l(part,kpic,&nppmx,idimp,np,mx,my,mx1,mxy1,&irc);
    if (irc != 0) {
@@ -231,14 +221,6 @@ int main(int argc, char *argv[]) {
       printf("cppcheck2lt error, irc=%d\n",irc);
       exit(1);
    }
-//	 for (int nn = 0; nn < mxy1; nn++){
-//		 printf("tile %d:\n",nn);
-//	         for (int mm = 0; mm < kpic[nn]; mm ++ ){
-//	        	 float dx = ppart[mm+nppmx0*(idimp*nn)];
-//	        	 float dy = ppart[mm+nppmx0*(1+idimp*nn)];
-//	        	     printf("x=%.2f,y=%.2f,ind=%f\t",dx,dy,ppart[mm+nppmx0*(4+idimp*nn)]);
-//	         }
-//	 }
 /* copy to GPU */
    gpu_icopyin(&irc,g_irc,1);
    gpu_fcopyin(ppart,g_ppart,nppmx0*idimp*mxy1);
@@ -337,56 +319,6 @@ L500: if (nloop <= ntime)
          printf("push or reorder error: ntmax, irc=%d,%d\n",ntmax,irc);
          exit(1);
       }
-//         gpu_icopyout(kpic,g_kpic,mxy1);
-//         gpu_fcopyout(ppart,g_ppart,nppmx0*idimp*mxy1);
-//   cppcheck2lt(ppart,kpic,idimp,nppmx0,nx,ny,mx,my,mx1,my1,&irc);
-//   int sum=0;
-//	 for (int nn = 0; nn < mxy1; nn++){
-//	         for (int mm = 0; mm < kpic[nn]; mm ++ ){
-//	        	 sum += ppart[mm+nppmx0*(4+idimp*nn)];
-//	        	     //printf("x=%.2f,y=%.2f,ind=%.0f\t",dx,dy,ppart[mm+nppmx0*(4+idimp*nn)]);
-//	         }
-//		 }
-//   if (irc != 0 || sum != (npx*npy)*(npx*npy-1)/2) {
-//         printf("sum=%d\n",(int)sum);
-////         gpu_fcopyout(ppbuff,g_ppbuff,npbmx*idimp*mxy1);
-//         gpu_icopyout(ihole,g_ihole,2*(ntmax+1)*mxy1);
-//	   printf("\n");
-//	   sum = 0;
-//	 for (int nn = 0; nn < mxy1; nn++){
-//		 printf("\ntile %d:%d\n",nn, kpic[nn]);
-//	         for (int mm = 0; mm < kpic[nn]; mm ++ ){
-////	        	 float dx = ppart[mm+nppmx0*(idimp*nn)];
-////	        	 float dy = ppart[mm+nppmx0*(1+idimp*nn)];
-//	        	     //printf("x=%.2f,y=%.2f,ind=%.0f\t",dx,dy,ppart[mm+nppmx0*(4+idimp*nn)]);
-//	        	     printf("%.0f\n",ppart[mm+nppmx0*(4+idimp*nn)]);
-//	        	     printf("%.0f\n",ppart[mm+nppmx0*(4+idimp*nn)]);
-//	         }
-////		 if (nn == irc-1){
-////	            for (int mm = kpic[nn]; mm < kpic[nn]+5; mm ++ ){
-////	                    float dx = ppart[mm+nppmx0*(idimp*nn)];
-////	                    float dy = ppart[mm+nppmx0*(1+idimp*nn)];
-////	                        //printf("x=%.2f,y=%.2f,ind=%.0f\t",dx,dy,ppart[mm+nppmx0*(4+idimp*nn)]);
-////	                        printf("%.0f\n",ppart[mm+nppmx0*(4+idimp*nn)]);
-////		    }
-////		 }
-//			 printf("%d ihole=",ihole[(ntmax+1)*nn]);
-//		 for (int mm = 0; mm < ihole[(ntmax+1)*nn]; mm ++){
-//			 printf("%d\t",ihole[mm+1+(ntmax+1)*nn]);
-//		 }
-//			 printf("\n-----------------------------------\n");
-//		 for (int mm = 0; mm < ihole[(ntmax+1)*nn]; mm ++)
-//			 printf("%d\t",ihole[mm+(ntmax+1)*(nn+mxy1)]);
-////			 printf("\n");
-////			 printf("ppbuff:");
-////		 for (int mm = 0; mm < 5; mm ++){
-////			 printf("x=%.2f,y=%.2f,id=%d\t",ppbuff[mm+npbmx*(0+idimp*nn)],ppbuff[mm+npbmx*(1+idimp*nn)],(int)ppbuff[mm+npbmx*(4+idimp*nn)]);
-////		 }
-//
-//	 }
-//      printf("\ncppcheck2lt error, irc=%d\n",irc);
-//      exit(1);
-//   }
 
 /* energy diagnostic */
       if (ntime==0) {
@@ -423,8 +355,6 @@ L2000:
    printf("fft time = %f\n",tfft);
    printf("push time = %f\n",tpush);
    printf("sort time = %f\n",tsort);
-//   printf("sort step 1 time = %f, sort step 2 time = %f, sort step 3 time = %f\n",
-//		   0.001*tsortstep[0],0.001*tsortstep[1],0.001*tsortstep[2]);
    tfield += tguard + tfft;
    printf("total solver time = %f\n",tfield);
    time = tdpost + tpush + tsort;
