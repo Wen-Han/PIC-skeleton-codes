@@ -2285,30 +2285,30 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
 //   cudaEventRecord(start);
    gpuppfnd2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,idimp,nppmx,
                                        nx,ny,mx,my,npbmx,mx1,my1,ntmax,irc);
-/* cudaThreadSynchronize(); */
+   cudaThreadSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppfnd2l error=%d:%s\n",crc,cudaGetErrorString(crc));
       exit(1);
    }
-/* buffer particles that are leaving tile and sum ncl */
-   ns = 9*sizeof(int);
-   crc = cudaGetLastError();
-   //gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
-   //                                    nppmx,mx1,my1,npbmx,ntmax,irc);
-/* cudaThreadSynchronize(); */
-   crc = cudaGetLastError();
-   if (crc) {
-      printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
-      exit(1);
-   }
+///* buffer particles that are leaving tile and sum ncl */
+//   ns = 9*sizeof(int);
+//   crc = cudaGetLastError();
+//   //gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
+//   //                                    nppmx,mx1,my1,npbmx,ntmax,irc);
+///* cudaThreadSynchronize(); */
+//   crc = cudaGetLastError();
+//   if (crc) {
+//      printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
+//      exit(1);
+//   }
 /* copy incoming particles from ppbuff into ppart, update kpic */
    ns = (nblock_size+18)*sizeof(int);
    crc = cudaGetLastError();
    gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
                                        idimp,nppmx,mx1,my1,npbmx,ntmax,
                                        irc);
-/* cudaThreadSynchronize(); */
+   cudaThreadSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppord2l error=%d:%s\n",crc,cudaGetErrorString(crc));
