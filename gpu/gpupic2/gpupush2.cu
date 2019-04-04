@@ -957,11 +957,9 @@ local data                                                            */
    smaller than npp-ip, aka "real hoels" */
       // more particles going out than coming in
       if (ip > 0) {
-         // ist[1] is the number of positions need to buffer
-         // ist[2] is the number of positions read from buffer
+         // ist[1] is the number of positions currently in buffer
          if (threadIdx.x==0) {
             ist[1] = 0;
-            ist[2] = 0;
          }
          mm = (ip - 1)/(int) blockDim.x + 1;
          jj = (ntmax+1)*mxy1;
@@ -1002,8 +1000,8 @@ local data                                                            */
          // a real hole from ihole buffer. also replace that
          // position with j1
          else {
-            ii = atomicAdd(&ist[2],1);
-            ll = ihole[ii+(ntmax+1)*k+jj];
+            ii = atomicSub(&ist[1],1);
+            ll = ihole[ii+(ntmax+1)*k+jj-1];
             j2 = ihole[ni+ll+(ntmax+1)*k] - 1;
             ihole[ni+ll+(ntmax+1)*k] = j1 + 1;
             //ihole[j+1+(ntmax+1)*k] = j2 + 1;
@@ -1027,7 +1025,7 @@ local data                                                            */
          // too many bins for liscan or shared memory overflow
          if (mm > 2*blockDim.x+1 || mm > blockDim.x + 14)
             ist[0] = 1;
-         jj = ist[1] - ist[2];
+         jj = ist[1];
 /* sort the positions of the holes in weak-ordering within blockDim.x */
       if (jj > 0){
          j = threadIdx.x;
@@ -1051,17 +1049,12 @@ local data                                                            */
 /* now put everything in weakly-ordering, the first jj numbers
    are the holes to be filled. */
          nths = (jj - 1)/(int) blockDim.x + 1;
-         kk = ist[2];
          for (nn = 0; nn < nths; nn++) {
             j = threadIdx.x + blockDim.x*nn;
             if (j<jj){
-               i = ihole[kk+j+(ntmax+1)*(k+mxy1)];
-               i = ihole[ni+i+(ntmax+1)*k];
-            }
-            // sync, don't overwrite the front by the end of the array
-            __syncthreads();
-            if (j<jj) {
-                 ihole[j+(ntmax+1)*(k+mxy1)] = i;
+               i = ihole[j+(ntmax+1)*(k+mxy1)];
+               kk = ihole[ni+i+(ntmax+1)*k];
+               ihole[j+(ntmax+1)*(k+mxy1)] = kk;
             }
          }
          __syncthreads();
@@ -1071,12 +1064,12 @@ local data                                                            */
             if (j1 > nsz) {
                j2 = mm - (npp - j1) / (int) blockDim.x;
                i = atomicAdd(&sj[j2-1],1);
-                      ihole[jj+i+(ntmax+1)*(k+mxy1)] = j1;
+               ihole[jj+i+(ntmax+1)*(k+mxy1)] = j1;
             }
             j += blockDim.x;
          }
       }
-      // all remaining holes locates between npp and npp-ip, don't need to do anything
+      // all remaining holes are between npp and npp-ip, no need to do anything
       else {
          mm = 0;
       }
