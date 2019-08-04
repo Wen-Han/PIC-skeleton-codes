@@ -15,9 +15,10 @@ void dtimer(double *time, struct timeval *itime, int icntrl);
 int main(int argc, char *argv[]) {
 /* indx/indy = exponent which determines grid points in x/y direction: */
 /* nx = 2**indx, ny = 2**indy */
-   int indx =   9, indy =   9;
+   int indx =   4, indy =   4;
 /* npx/npy = number of electrons distributed in x/y direction */
-   int npx =  3072, npy =   3072;
+   //int npx =  3072, npy =   3072;
+   int npx =  96, npy =   96;
 /* ndim = number of velocity coordinates = 2 */
    int ndim = 2;
 /* tend = time at end of simulation, in units of plasma frequency */
@@ -303,11 +304,13 @@ L500: if (nloop <= ntime)
 /* reorder particles by tile with GPU code: */
       dtimer(&dtime,&itime,-1);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, g_ihole,and g_irc */
+      printf("before sorting ...\n");
       cgpuppord2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0,
                   nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, and g_irc */
 /*    cgpuppordf2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0, */
 /*                 mx1,my1,npbmx,ntmax,g_irc);                         */
+      printf("after sorting ...\n");
       dtimer(&dtime,&itime,1);
       time = (float) dtime;
       tsort += time;
