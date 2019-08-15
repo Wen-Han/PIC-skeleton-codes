@@ -2628,11 +2628,12 @@ local data                                                            */
    return;
 #undef NPBLK
 }
+
 /*--------------------------------------------------------------------*/
 void cgpuppord2l(float ppart[], float ppbuff[], int kpic[], int ncl[],
-                  int ihole[], int idimp, int nppmx, int nx, int ny,
-                  int mx, int my, int mx1, int my1, int npbmx,
-                  int ntmax, int *irc) {
+        int ihole[], int idimp, int nppmx, int nx, int ny,
+        int mx, int my, int mx1, int my1, int npbmx,
+        int ntmax, int *irc) {
 /* this subroutine sorts particles by x,y grid in tiles of mx, my
    linear interpolation, with periodic boundary conditions
    tiles are assumed to be arranged in 2D linear memory
@@ -2641,579 +2642,424 @@ void cgpuppord2l(float ppart[], float ppbuff[], int kpic[], int ncl[],
    and ihole.  second, a prefix scan of ncl is performed and departing
    particles are buffered in ppbuff in direction order.  finally, we copy
    the incoming particles from other tiles into ppart.
-   input: all except ppbuff, ncl, ihole, irc
-   output: ppart, ppbuff, kpic, ncl, ihole, irc
-   ppart[k][0][n] = position x of particle n in tile k
-   ppart[k][1][n] = position y of particle n in tile k 
-   ppbuff[k][i][n] = i co-ordinate of particle n in tile k
-   kpic[k] = number of particles in tile k
-   ncl[k][i] = number of particles going to destination i, tile k
-   ihole[k][:][0] = location of hole in array left by departing particle
-   ihole[k][:][1] = direction destination of particle leaving hole
-   all for tile k
-   ihole[k][0][0] = ih, number of holes left (error, if negative)
-   idimp = size of phase space = 4
-   nppmx = maximum number of particles in tile
-   nx/ny = system length in x/y direction
-   mx/my = number of grids in sorting cell in x/y
-   mx1 = (system length in x direction - 1)/mx + 1
-   my1 = (system length in y direction - 1)/my + 1
-   npbmx = size of buffer array ppbuff
-   ntmax = size of hole array for particles leaving tiles
-   irc = maximum overflow, returned only if error occurs, when irc > 0
+input: all except ppbuff, ncl, ihole, irc
+output: ppart, ppbuff, kpic, ncl, ihole, irc
+ppart[k][0][n] = position x of particle n in tile k
+ppart[k][1][n] = position y of particle n in tile k 
+ppbuff[k][i][n] = i co-ordinate of particle n in tile k
+kpic[k] = number of particles in tile k
+ncl[k][i] = number of particles going to destination i, tile k
+ihole[k][:][0] = location of hole in array left by departing particle
+ihole[k][:][1] = direction destination of particle leaving hole
+all for tile k
+ihole[k][0][0] = ih, number of holes left (error, if negative)
+idimp = size of phase space = 4
+nppmx = maximum number of particles in tile
+nx/ny = system length in x/y direction
+mx/my = number of grids in sorting cell in x/y
+mx1 = (system length in x direction - 1)/mx + 1
+my1 = (system length in y direction - 1)/my + 1
+npbmx = size of buffer array ppbuff
+ntmax = size of hole array for particles leaving tiles
+irc = maximum overflow, returned only if error occurs, when irc > 0
 local data                                                            */
 #define NPBLK             16
 #define MX1               32
 #define MY1               32
 #define MXY1              MX1*MY1
-/* PVW has to be 32 if -ta=gvmode is not specified in the compiler flag */
+    /* PVW has to be 32 if -ta=gvmode is not specified in the compiler flag */
 #define PVW               32
-   int mxy1, ncoff, noff, moff, npoff, npp, ipp, joff, nhp;
-   int i, j, k, m, ii, kx, ky, ih, ist, nn, mm;
-   int jj, ll, nths;
-   int ip, j1, j2, kxl, kxr, kk, kl, kr, lb, kxs;
-   int ni, nsz;
-   float anx, any, edgelx, edgely, edgerx, edgery, dx, dy;
-   int ks[9];
-   int sj[PVW+1];
-   int tid[PVW+1];
-   //int nh[2];
-   int nh;
-///* scratch arrays */
-//   int n[NPBLK*3];
-   //int ntp[3072*3072];  // should be dynamically allocated
-   mxy1 = mx1*my1;
-   anx = (float) nx;
-   any = (float) ny;
-//resetparticleid(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc);
-/* find and count particles leaving tiles and determine destination */
-/* update ppart, ihole, ncl */
-/* loop over tiles */
+    int mxy1, ncoff, noff, moff, npoff, npp, ipp, joff, nhp;
+    int i, j, k, m, ii, kx, ky, ih, ist, nn, mm;
+    int jj, ll, nths;
+    int ip, j1, j2, kxl, kxr, kk, kl, kr, lb, kxs;
+    int ni, nsz;
+    float anx, any, edgelx, edgely, edgerx, edgery, dx, dy;
+    int ks[9];
+    int sj[PVW+1];
+    int tid[PVW+1];
+    int nh;
+    ///* scratch arrays */
+    mxy1 = mx1*my1;
+    anx = (float) nx;
+    any = (float) ny;
+    /* find and count particles leaving tiles and determine destination */
+    /* update ppart, ihole, ncl */
+    /* loop over tiles */
 #pragma acc data create(ks,sj,tid) \
-deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) \
-copyin(mxy1,anx,any,idimp,nppmx,nx,ny,mx,my,npbmx,ntmax) 
-{
+    deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) \
+    copyin(mxy1,anx,any,idimp,nppmx,nx,ny,mx,my,npbmx,ntmax) 
+    {
 #pragma acc cache(ks)
 #pragma acc parallel loop gang \
-vector_length(512) num_workers(1) \
-private(k,ky,kk,kl,kr,kx,kxl,kxr,noff,moff,npp,npoff,nn,mm,edgelx,edgely,edgerx,edgery,ks,nh)
-//#pragma acc loop gang 
-   for (k = 0; k < mxy1; k++) {
+        vector_length(512) num_workers(1) \
+        private(k,ky,kk,kl,kr,kx,kxl,kxr,noff,moff,npp,npoff,nn,mm,edgelx,edgely,edgerx,edgery,ks,nh)
+        //#pragma acc loop gang 
+        for (k = 0; k < mxy1; k++) {
 
-/* find address offset for ordered ppbuff array */
-      ky = k/mx1;
-/* loop over tiles in y, assume periodic boundary conditions */
-      kk = ky*mx1;
-/* find tile above */
-      kl = ky - 1;
-      if (kl < 0)
-         kl += my1;
-      kl = kl*mx1;
-/* find tile below */
-      kr = ky + 1;
-      if (kr >= my1)
-         kr -= my1;
-      kr = kr*mx1;
-/* loop over tiles in x, assume periodic boundary conditions */
-      kx = k - ky*mx1;
-      kxl = kx - 1;
-      if (kxl < 0)
-         kxl += mx1;
-      kxr = kx + 1;
-      if (kxr >= mx1)
-         kxr -= mx1;
-/* find tile number for different directions */
-      //if (threadIdx.x==0) {
-      ks[0] = kxl + kk;
-      ks[1] = kxr + kk;
-      ks[2] = kx + kl;
-      ks[3] = kxl + kl;
-      ks[4] = kxr + kl;
-      ks[5] = kx + kr;
-      ks[6] = kxl + kr;
-      ks[7] = kxr + kr;
+            /* find address offset for ordered ppbuff array */
+            ky = k/mx1;
+            /* loop over tiles in y, assume periodic boundary conditions */
+            kk = ky*mx1;
+            /* find tile above */
+            kl = ky - 1;
+            if (kl < 0)
+                kl += my1;
+            kl = kl*mx1;
+            /* find tile below */
+            kr = ky + 1;
+            if (kr >= my1)
+                kr -= my1;
+            kr = kr*mx1;
+            /* loop over tiles in x, assume periodic boundary conditions */
+            kx = k - ky*mx1;
+            kxl = kx - 1;
+            if (kxl < 0)
+                kxl += mx1;
+            kxr = kx + 1;
+            if (kxr >= mx1)
+                kxr -= mx1;
+            /* find tile number for different directions */
+            ks[0] = kxl + kk;
+            ks[1] = kxr + kk;
+            ks[2] = kx + kl;
+            ks[3] = kxl + kl;
+            ks[4] = kxr + kl;
+            ks[5] = kx + kr;
+            ks[6] = kxl + kr;
+            ks[7] = kxr + kr;
 
-      nh = 0;
-      //nh[1] = 0;
-      ks[8] = 0;
-      ihole[(ntmax+1)*(k+mxy1)] = 0;
-/* reset the counter for number of particles comming in tile k */
-         //nh[1] = 0;
-      //}
-/* synchronize threads */
-      //__syncthreads();
+            nh = 0;
+            /* reset the counter for number of particles comming in tile k */
+            ks[8] = 0;
+            ihole[(ntmax+1)*(k+mxy1)] = 0;
+            /* synchronize threads */
 
-      noff = k/mx1;
-      moff = my*noff;
-      noff = mx*(k - mx1*noff);
-      npp = kpic[k];
-      nn = nx - noff;
-      nn = mx < nn ? mx : nn;
-      mm = ny - moff;
-      mm = my < mm ? my : mm;
-      edgelx = noff;
-      edgerx = noff + nn;
-      edgely = moff;
-      edgery = moff + mm;
-/* clear counters */
-/* loop over particles in tile */
+            noff = k/mx1;
+            moff = my*noff;
+            noff = mx*(k - mx1*noff);
+            npp = kpic[k];
+            nn = nx - noff;
+            nn = mx < nn ? mx : nn;
+            mm = ny - moff;
+            mm = my < mm ? my : mm;
+            edgelx = noff;
+            edgerx = noff + nn;
+            edgely = moff;
+            edgery = moff + mm;
+            /* clear counters */
+            /* loop over particles in tile */
 #pragma acc loop worker, vector independent \
-private(j,ist,dx,dy,ih,kk,ii)
-      for (j = 0; j < npp; j++) {
-         dx = ppart[j+nppmx*(idimp*k)];
-         dy = ppart[j+nppmx*(1+idimp*k)];
-/* find particles going out of bounds */
-         ist = 0;
-/* count how many particles are going out   */
-/* save their address and destination in ihole                   */
-/* use periodic boundary conditions and check for roundoff error */
-/* ist = direction particle is going                             */
-         if (dx >= edgerx) {
-            if (dx >= anx)
-               dx -= anx;
-            ist = 2;
-         }
-         else if (dx < edgelx) {
-            if (dx < 0.0f) {
-               dx += anx;
-               if (dx < anx)
-                  ist = 1;
-               else
-                  dx = 0.0f;
-            }
-            else {
-               ist = 1;
-            }
-         }
-         if (dy >= edgery) {
-            if (dy >= any)
-               dy -= any;
-            ist += 6;
-         }
-         else if (dy < edgely) {
-            if (dy < 0.0f) {
-               dy += any;
-               if (dy < any)
-                  ist += 3;
-               else
-                  dy = 0.0f;
-            }
-            else {
-               ist += 3;
-            }
-         }
-         if (ist > 0) {
-            // register the ihole address
+            private(j,ist,dx,dy,ih,kk,ii)
+            for (j = 0; j < npp; j++) {
+                dx = ppart[j+nppmx*(idimp*k)];
+                dy = ppart[j+nppmx*(1+idimp*k)];
+                /* find particles going out of bounds */
+                ist = 0;
+                /* count how many particles are going out   */
+                /* save their address and destination in ihole                   */
+                /* use periodic boundary conditions and check for roundoff error */
+                /* ist = direction particle is going                             */
+                if (dx >= edgerx) {
+                    if (dx >= anx)
+                        dx -= anx;
+                    ist = 2;
+                }
+                else if (dx < edgelx) {
+                    if (dx < 0.0f) {
+                        dx += anx;
+                        if (dx < anx)
+                            ist = 1;
+                        else
+                            dx = 0.0f;
+                    }
+                    else {
+                        ist = 1;
+                    }
+                }
+                if (dy >= edgery) {
+                    if (dy >= any)
+                        dy -= any;
+                    ist += 6;
+                }
+                else if (dy < edgely) {
+                    if (dy < 0.0f) {
+                        dy += any;
+                        if (dy < any)
+                            ist += 3;
+                        else
+                            dy = 0.0f;
+                    }
+                    else {
+                        ist += 3;
+                    }
+                }
+                if (ist > 0) {
+                    // register the ihole address
 #pragma acc atomic capture
-            ih = ks[8] ++;
-            //ih = nh[1] ++;
-            ih ++;
-            //ih = atomicAdd(&nh[1],1);
-            //ih += 1;
-            // check for ihole overflow
-            if (ih <= ntmax)
-               ihole[ih+(ntmax+1)*k] = j + 1;
-            else
-               nh = 1;
-            // kk is the tile number of destination
-            kk = ks[ist-1];
-            // register the ppbuff address
+                    ih = ks[8] ++;
+                    ih ++;
+                    // check for ihole overflow
+                    if (ih <= ntmax)
+                        ihole[ih+(ntmax+1)*k] = j + 1;
+                    else
+                        nh = 1;
+                    // kk is the tile number of destination
+                    kk = ks[ist-1];
+                    // register the ppbuff address
 #pragma acc atomic capture
-            ii = ncl[kk] ++;
-            //ii = atomicAdd(&ncl[kk],1);
-            // check for ppbuff overflow
-            if (ii < npbmx) {
-               ppbuff[ii+npbmx*(idimp*kk)] = dx;
-               ppbuff[ii+npbmx*(1+idimp*kk)] = dy;
-                  ppbuff[ii+npbmx*(2+idimp*kk)] = ppart[j+nppmx*(2+idimp*k)];
-                  ppbuff[ii+npbmx*(3+idimp*kk)] = ppart[j+nppmx*(3+idimp*k)];
-                  ppbuff[ii+npbmx*(4+idimp*kk)] = ppart[j+nppmx*(4+idimp*k)];
-//#pragma acc loop seq private(i)
-//               for (i = 2; i < idimp; i++) {
-//                  ppbuff[ii+npbmx*(i+idimp*kk)]
-//                  = ppart[j+nppmx*(i+idimp*k)];
-//               }
+                    ii = ncl[kk] ++;
+                    // check for ppbuff overflow
+                    if (ii < npbmx) {
+                        ppbuff[ii+npbmx*(idimp*kk)] = dx;
+                        ppbuff[ii+npbmx*(1+idimp*kk)] = dy;
+#pragma acc loop seq private(i)
+                        for (i = 2; i < idimp; i++) {
+                            ppbuff[ii+npbmx*(i+idimp*kk)]
+                                = ppart[j+nppmx*(i+idimp*k)];
+                        }
+                    }
+                    else {
+                        nh = 1;
+                    }
+                }
             }
-            else {
-               nh = 1;
+            ihole[(ntmax+1)*k] = ks[8];
+            /* ihole overflow */
+            if (nh > 0) {
+                *irc = ihole[(ntmax+1)*k];
+                ihole[(ntmax+1)*k] = -ihole[(ntmax+1)*k];
             }
-         }
-      }
-      ihole[(ntmax+1)*k] = ks[8];
-/* ihole overflow */
-         //ih = nh[1];
-         if (nh > 0) {
-            *irc = ihole[(ntmax+1)*k];
-            ihole[(ntmax+1)*k] = -ihole[(ntmax+1)*k];
-         }
-         //ihole[(ntmax+1)*k] = nh[1];
-   }
+        }
 
-//#pragma acc wait
-///* ihole overflow */
-//   if (*irc > 0)
-//      return;
-//printf("done buffering outgoing particles\n");
-//cgpuprinttile(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc, 0);
-/* copy incoming particles from buffer into ppart: update ppart, kpic */
-/* loop over tiles */
-
-//#pragma acc parallel \
-//vector_length(PVW) num_workers(1)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) \
-//copyin(mxy1,idimp,nppmx,npbmx,ntmax)
 #pragma acc parallel loop gang \
-private(k,npp,mm,nhp,ni,ip,nsz,ip,nh)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
-   for (k = 0; k < mxy1; k++) {
-      npp = kpic[k];
-      nhp = ihole[(ntmax+1)*k];
-      ni = ncl[k];
-      ip = nhp - ni;
-      nsz = npp - ip;
-      //if (threadIdx.x==0) {
-         nh = 0;
-         if (nsz >= nppmx)
-            *irc = 1;
-      //}
-/* synchronize threads */
-      //__syncthreads();
-/* the positions in ihole are stored out of orders, */
-/* identify holes with positions that should be
-   smaller than npp-ip, aka "real hoels" */
-      // more particles going out than coming in
-      if (ip > 0) {
-         // nh[1] is the number of positions currently in buffer
-         //if (threadIdx.x==0) {
-            //nh[1] = 0;
-            //ihole[(ntmax+1)*(k+mxy1)] = 0;
-         //}
-         //jj = (ntmax+1)*mxy1;
-         // check for real holes with positions greater than
-         // npp-ip and put their position in ihole in
-         // ihole buffer (think of pointer to pointer)
+        private(k,npp,mm,nhp,ni,ip,nsz,ip,nh)
+        //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
+        for (k = 0; k < mxy1; k++) {
+            npp = kpic[k];
+            nhp = ihole[(ntmax+1)*k];
+            ni = ncl[k];
+            ip = nhp - ni;
+            nsz = npp - ip;
+            nh = 0;
+            if (nsz >= nppmx)
+                *irc = 1;
+            /* the positions in ihole are stored out of orders, */
+            /* identify holes with positions that should be
+               smaller than npp-ip, aka "real hoels" */
+            // more particles going out than coming in
+            if (ip > 0) {
 #pragma acc loop worker vector private(j1,ii,j)
-         for (j = 1; j <= ip; j++) {
-            j1 = ihole[ni+j+(ntmax+1)*k] - 1;
-            if (j1 < nsz) {
+                for (j = 1; j <= ip; j++) {
+                    j1 = ihole[ni+j+(ntmax+1)*k] - 1;
+                    if (j1 < nsz) {
 #pragma acc atomic capture
-               ii = nh ++;
-               ihole[ii+(ntmax+1)*(k+mxy1)+1] = j;
+                        ii = nh ++;
+                        ihole[ii+(ntmax+1)*(k+mxy1)+1] = j;
+                    }
+                }
             }
-         }
-	 //ihole[(ntmax+1)*(k+mxy1)] = nh[1];
-      }
-      ihole[(ntmax+1)*(k+mxy1)] = nh;
-   }
-//#pragma acc wait
-//printf("done buffering iholes\n");
-//cgpuprinttile(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc, 0);
+            ihole[(ntmax+1)*(k+mxy1)] = nh;
+        }
 
-//      __threadfence_block();
-//      __syncthreads();
-      //j = threadIdx.x;
-
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) create(sj,tid) \
-//copyin(mxy1,idimp,nppmx,npbmx,ntmax)
 #pragma acc parallel loop gang vector_length(16) num_workers(32)\
-private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,nh)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
-   for (k = 0; k < mxy1; k++) {
-      npp = kpic[k];
-      nhp = ihole[(ntmax+1)*k];
-      ni = ncl[k];
-      ip = nhp - ni;
-      nsz = npp - ip;
-      nh = ihole[(ntmax+1)*(k+mxy1)];
-      //nh[1] = ihole[(ntmax+1)*(k+mxy1)];
+        private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,nh)
+        //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
+        for (k = 0; k < mxy1; k++) {
+            npp = kpic[k];
+            nhp = ihole[(ntmax+1)*k];
+            ni = ncl[k];
+            ip = nhp - ni;
+            nsz = npp - ip;
+            nh = ihole[(ntmax+1)*(k+mxy1)];
 #pragma acc loop worker vector private(ii,ll,j,j1,j2)
-      for (j = 0; j < ni; j ++) {
-/* insert incoming particles into holes */
-         if (j < nhp) {
-            j1 = ihole[j+1+(ntmax+1)*k] - 1;
-         }
-/* place overflow at end of array */
-         else {
-            j1 = npp + (j - nhp);
-         }
-         // if j1 is the position of a real hole
-         if (j1 < nsz) {
-               ppart[j1+nppmx*(  idimp*k)] = ppbuff[j+npbmx*(  idimp*k)];
-               ppart[j1+nppmx*(1+idimp*k)] = ppbuff[j+npbmx*(1+idimp*k)];
-               ppart[j1+nppmx*(2+idimp*k)] = ppbuff[j+npbmx*(2+idimp*k)];
-               ppart[j1+nppmx*(3+idimp*k)] = ppbuff[j+npbmx*(3+idimp*k)];
-               ppart[j1+nppmx*(4+idimp*k)] = ppbuff[j+npbmx*(4+idimp*k)];
-//#pragma acc loop seq private(i)
-//            for (i = 0; i < idimp; i++) {
-//               ppart[j1+nppmx*(i+idimp*k)]
-//               = ppbuff[j+npbmx*(i+idimp*k)];
-//             }
-         }
-         // if j1 is not a real hole then get one position of
-         // a real hole from ihole buffer. also replace that
-         // position with j1
-         else {
+            for (j = 0; j < ni; j ++) {
+                /* insert incoming particles into holes */
+                if (j < nhp) {
+                    j1 = ihole[j+1+(ntmax+1)*k] - 1;
+                }
+                /* place overflow at end of array */
+                else {
+                    j1 = npp + (j - nhp);
+                }
+                // if j1 is the position of a real hole
+                if (j1 < nsz) {
+#pragma acc loop seq private(i)
+                    for (i = 0; i < idimp; i++) {
+                        ppart[j1+nppmx*(i+idimp*k)]
+                            = ppbuff[j+npbmx*(i+idimp*k)];
+                    }
+                }
+                // if j1 is not a real hole then get one position of
+                // a real hole from ihole buffer. also replace that
+                // position with j1
+                else {
 #pragma acc atomic capture
-            ii = nh --;
-            //ii = nh[1] --;
-            //ii = atomicSub(&ist[1],1);
-            ll = ihole[ii+(ntmax+1)*(k+mxy1)];
-            j2 = ihole[ni+ll+(ntmax+1)*k] - 1;
-            //ihole[j+1+(ntmax+1)*k] = j2 + 1; // debug only
-            ihole[ni+ll+(ntmax+1)*k] = j1 + 1;
-               ppart[j2+nppmx*(  idimp*k)] = ppbuff[j+npbmx*(  idimp*k)];
-               ppart[j2+nppmx*(1+idimp*k)] = ppbuff[j+npbmx*(1+idimp*k)];
-               ppart[j2+nppmx*(2+idimp*k)] = ppbuff[j+npbmx*(2+idimp*k)];
-               ppart[j2+nppmx*(3+idimp*k)] = ppbuff[j+npbmx*(3+idimp*k)];
-               ppart[j2+nppmx*(4+idimp*k)] = ppbuff[j+npbmx*(4+idimp*k)];
-//#pragma acc loop seq private(i)
-//            for (i = 0; i < idimp; i++) {
-//               ppart[j2+nppmx*(i+idimp*k)]
-//               = ppbuff[j+npbmx*(i+idimp*k)];
-//            }
-         }
-      }
-      //ihole[(ntmax+1)*(k+mxy1)] = nh[1];
-      ihole[(ntmax+1)*(k+mxy1)] = nh;
-   }
-//#pragma acc wait
-//printf("done importing incoming particles\n");
-//cgpuprinttile(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc, 0);
+                    ii = nh --;
+                    //ii = nh[1] --;
+                    //ii = atomicSub(&ist[1],1);
+                    ll = ihole[ii+(ntmax+1)*(k+mxy1)];
+                    j2 = ihole[ni+ll+(ntmax+1)*k] - 1;
+                    //ihole[j+1+(ntmax+1)*k] = j2 + 1; // debug only
+                    ihole[ni+ll+(ntmax+1)*k] = j1 + 1;
+#pragma acc loop seq private(i)
+                    for (i = 0; i < idimp; i++) {
+                        ppart[j2+nppmx*(i+idimp*k)]
+                            = ppbuff[j+npbmx*(i+idimp*k)];
+                    }
+                }
+            }
+            //ihole[(ntmax+1)*(k+mxy1)] = nh[1];
+            ihole[(ntmax+1)*(k+mxy1)] = nh;
+        }
 #pragma acc cache(sj,tid)
 #pragma acc parallel \
-vector_length(PVW) num_workers(1)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) create(sj,tid) \
-//copyin(mxy1,idimp,nppmx,npbmx,ntmax)
+        vector_length(PVW) num_workers(1)
 #pragma acc loop gang \
-private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,ll,nh,ii)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
-   for (k = 0; k < mxy1; k++) {
-      npp = kpic[k];
-      nhp = ihole[(ntmax+1)*k];
-      ni = ncl[k];
-      ip = nhp - ni;
-      nsz = npp - ip;
-      ii = ihole[(ntmax+1)*(k+mxy1)];
-/* synchronize threads */
-//      __threadfence_block(); // not sure if we need this
-      //__syncthreads();
-/* update particle number if all holes have been filled */
-//      if (ip < 0)
-//         npp -= ip;
-/* fill up remaining holes in particle array with particles from end */
-      if (ip > 0) {
-         mm = (ip - 1)/(int) PVW + 1;
-         // too many bins for liscan or shared memory overflow (what is this magical number 14?)
-         if (mm > 2*PVW+1 || mm > PVW + 14)
-            nh = 1;
-         //jj = nh[1];
-/* sort the positions of the holes in weak-ordering within blockDim.x */
-         if (ii > 0){
-            //j = threadIdx.x;
+        private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,ll,nh,ii)
+        //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
+        for (k = 0; k < mxy1; k++) {
+            npp = kpic[k];
+            nhp = ihole[(ntmax+1)*k];
+            ni = ncl[k];
+            ip = nhp - ni;
+            nsz = npp - ip;
+            ii = ihole[(ntmax+1)*(k+mxy1)];
+            /* fill up remaining holes in particle array with particles from end */
+            if (ip > 0) {
+                mm = (ip - 1)/(int) PVW + 1;
+                // too many bins for liscan or shared memory overflow (what is this magical number 14?)
+                if (mm > 2*PVW+1 || mm > PVW + 14)
+                    nh = 1;
+                /* sort the positions of the holes in weak-ordering within blockDim.x */
+                if (ii > 0){
 #pragma acc loop vector private(j)
-            for (j = 0; j <= mm; j ++) {
-               sj[j] = 0;
-            }
-         //__syncthreads();
-         //j = threadIdx.x;
-/* find holes between npp and npp-ip, sort them into mm bins */
+                    for (j = 0; j <= mm; j ++) {
+                        sj[j] = 0;
+                    }
+                    /* find holes between npp and npp-ip, sort them into mm bins */
 #pragma acc loop vector private(j,j1)
-            for (j = 0; j < ip; j ++) {
-               j1 = ihole[ni+j+1+(ntmax+1)*k] - 1;
-               if (j1 >= nsz) {
-                  //j1 = mm - (npp - j1) / PVW;
-                  j1 = (j1 - nsz) / PVW + 1;
+                    for (j = 0; j < ip; j ++) {
+                        j1 = ihole[ni+j+1+(ntmax+1)*k] - 1;
+                        if (j1 >= nsz) {
+                            //j1 = mm - (npp - j1) / PVW;
+                            j1 = (j1 - nsz) / PVW + 1;
 #pragma acc atomic update
-                  sj[j1] ++;
-               }
-            }
-         //__syncthreads();
-            aliscan2(sj,tid,mm);
-/* now put everything in weakly-ordering, the first nh[1] numbers
-   are the holes to be filled. */
+                            sj[j1] ++;
+                        }
+                    }
+                    aliscan2(sj,tid,mm);
+                    /* now put everything in weakly-ordering, the first nh[1] numbers
+                       are the holes to be filled. */
 #pragma acc loop vector private(i,j,j1)
-            for (j = 0; j < ii; j++) {
-               i = ihole[j+(ntmax+1)*(k+mxy1)+1];
-               j1 = ihole[ni+i+(ntmax+1)*k];
-               ihole[j+(ntmax+1)*(k+mxy1)+1] = j1;
-            }
-         //__syncthreads();
+                    for (j = 0; j < ii; j++) {
+                        i = ihole[j+(ntmax+1)*(k+mxy1)+1];
+                        j1 = ihole[ni+i+(ntmax+1)*k];
+                        ihole[j+(ntmax+1)*(k+mxy1)+1] = j1;
+                    }
 #pragma acc loop vector private(i,j,j1,j2)
-            for (j = 0; j < ip; j++) {
-               j1 = ihole[ni+j+1+(ntmax+1)*k] - 1;
-               if (j1 >= nsz) {
-                  //j2 = mm - (npp - j1) / PVW;
-                  j2 = (j1 - nsz) / PVW;
+                    for (j = 0; j < ip; j++) {
+                        j1 = ihole[ni+j+1+(ntmax+1)*k] - 1;
+                        if (j1 >= nsz) {
+                            j2 = (j1 - nsz) / PVW;
 #pragma acc atomic capture
-                  i = sj[j2] ++;
-                  //i = atomicAdd(&sj[j2-1],1);
-                  ihole[ii+i+(ntmax+1)*(k+mxy1)+1] = j1 + 1;
-               }
+                            i = sj[j2] ++;
+                            ihole[ii+i+(ntmax+1)*(k+mxy1)+1] = j1 + 1;
+                        }
+                    }
+                }
+                // all remaining holes are between npp and npp-ip, no need to do anything
+                else {
+                    mm = 0;
+                }
             }
-         }
-      // all remaining holes are between npp and npp-ip, no need to do anything
-         else {
-            mm = 0;
-         }
-      }
-   }
-/* synchronize threads */
-      //__syncthreads();
-               
-//#pragma acc wait
-//printf("done sorting remaining iholes\n");
-//cgpuprinttile(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc, 0);
+        }
 #pragma acc parallel \
-vector_length(PVW) num_workers(1)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) create(sj,tid) \
-//copyin(mxy1,idimp,nppmx,npbmx,ntmax)
+        vector_length(PVW) num_workers(1)
 #pragma acc loop gang \
-private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,ll,nh)
-//deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
-   for (k = 0; k < mxy1; k++) {
-      npp = kpic[k];
-      nhp = ihole[(ntmax+1)*k];
-      ni = ncl[k];
-      ip = nhp - ni;
-      nsz = npp - ip;
-      nhp = ihole[(ntmax+1)*(k+mxy1)];
-      //nsz = npp - ip;
-      //nh[1] = ihole[(ntmax+1)*(k+mxy1)];
-		 //kk= ll=0;
-      if (nhp > 0) {
-         mm = (ip - 1)/(int) PVW + 1;
-/* loop over holes */
-	 //reduction(+:kk,ll)
+        private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,ll,nh)
+        for (k = 0; k < mxy1; k++) {
+            npp = kpic[k];
+            nhp = ihole[(ntmax+1)*k];
+            ni = ncl[k];
+            ip = nhp - ni;
+            nsz = npp - ip;
+            nhp = ihole[(ntmax+1)*(k+mxy1)];
+            if (nhp > 0) {
+                mm = (ip - 1)/(int) PVW + 1;
+                /* loop over holes */
 #pragma acc loop worker seq private(nn,ii,nths,kk,ll) 
-         for (nn = 0;nn < mm; nn++) {
-		 if (nn == 0)
-			 kk = ll = 0;
+                for (nn = 0;nn < mm; nn++) {
+                    if (nn == 0)
+                        kk = ll = 0;
 #pragma acc loop vector private(j)
-            for (j = 0; j < PVW; j ++) {
-/* holes with locations greater than npp-ip do not need to be fill */
-/* identify such holes */
-               sj[j] = 1;
-            }
-/* synchronize threads */
-         //__syncthreads();
-/* omit particles at end that are holes */
+                    for (j = 0; j < PVW; j ++) {
+                        /* holes with locations greater than npp-ip do not need to be fill */
+                        /* identify such holes */
+                        sj[j] = 1;
+                    }
+                    /* synchronize threads */
+                    //__syncthreads();
+                    /* omit particles at end that are holes */
 #pragma acc loop vector private(i,j,j2,jj)
-            for (i = 0; i < PVW; i ++) {
-/* j2 = locations of holes at the end, in increasing order */
-               //j2 = npp;
-               //jj = nhp - ll - i - nn*PVW - ni - 1;
-	       jj = i + ll;
-               if (jj < ip - nhp) {
-                  j2 = ihole[nhp+jj+1+(ntmax+1)*(k+mxy1)] - 1;
-		  if (j2 < nsz + PVW * (nn + 1))
-                     sj[(j2 - nsz) % PVW] = 0;
-               }
-            }
-            nths = ip - PVW*nn;
-            if (nths > PVW)
-               nths = PVW;
+                    for (i = 0; i < PVW; i ++) {
+                        /* j2 = locations of holes at the end, in increasing order */
+                        jj = i + ll;
+                        if (jj < ip - nhp) {
+                            j2 = ihole[nhp+jj+1+(ntmax+1)*(k+mxy1)] - 1;
+                            if (j2 < nsz + PVW * (nn + 1))
+                                sj[(j2 - nsz) % PVW] = 0;
+                        }
+                    }
+                    nths = ip - PVW*nn;
+                    if (nths > PVW)
+                        nths = PVW;
 
-/* synchronize threads */
-         //__syncthreads();
-/* perform local prefix reduction */
-            aliscan2(sj,tid,nths);
-/* ii = number particles at end to be moved */
-//            ii = 0;
-//            if (nths > 0)
-//               ii = sj[nths-1];
-            if (sj[nths-1] > 0) {
+                    /* perform local prefix reduction */
+                    aliscan2(sj,tid,nths);
+                    if (sj[nths-1] > 0) {
 #pragma acc loop vector private(i)
-               for (i = 0; i < PVW; i ++) {
-                  if (i > 0)
-                     tid[i] = sj[i-1];
-	          else
-                     tid[i] = 0;
-               }
+                        for (i = 0; i < PVW; i ++) {
+                            if (i > 0)
+                                tid[i] = sj[i-1];
+                            else
+                                tid[i] = 0;
+                        }
 #pragma acc loop vector private(i,j,jj,j1,j2)
-               for (i = 0; i < PVW; i ++) {
-                  j = i;
-                  j += PVW*nn;
-		  //if (i == 1) *irc = 100*100 - 1+ ip;
-/* identify which particles at end to be moved */
-                  //ncoff = 1;
-                  if (i < nths) {
-		     if (sj[i] - tid[i] == 1){
-		       //*irc = 1000*sj[0]+sj[1]+100*ip+10000*tid[0]+100000*tid[1];
-		       //*irc =1;
-                        j1 = nsz + j;
-                        jj = sj[i] + kk - 1;
-                     //if (jj <= nhp)
-                        j2 = ihole[jj+1+(ntmax+1)*(k+mxy1)] - 1;
-//			*irc = ppart[j2+nppmx*(4+idimp*k)];
-		        //if (j1 > nsz && j2 <= nsz) {
-			//*irc = ppart[j2+nppmx*(4+idimp*k)] + 100000*ppart[j1+nppmx*(4+idimp*k)];
-			if (j2 < nsz) {
-			ppart[j2+nppmx*(  idimp*k)] = ppart[j1+nppmx*(  idimp*k)];
-			ppart[j2+nppmx*(1+idimp*k)] = ppart[j1+nppmx*(1+idimp*k)];
-			ppart[j2+nppmx*(2+idimp*k)] = ppart[j1+nppmx*(2+idimp*k)];
-			ppart[j2+nppmx*(3+idimp*k)] = ppart[j1+nppmx*(3+idimp*k)];
-			ppart[j2+nppmx*(4+idimp*k)] = ppart[j1+nppmx*(4+idimp*k)];
-//	ihole[ip+32+(ntmax+1)*(k+mxy1)+j] = ppart[j1+nppmx*(4+idimp*k)] + 1000000*nn + 10000000*sj[i];
-//	ihole[ip+mm*PVW+56+(ntmax+1)*(k+mxy1)+j] = j2 + 1 + 100000*j+10000000*sj[nths-1];
-//	ihole[ip+mm*2*PVW+80+(ntmax+1)*(k+mxy1)+j] = j1 + 1 + 1000000*jj;
-//	ihole[ip+mm*3*PVW+104+(ntmax+1)*(k+mxy1)+j] = i+100*ll+10000*kk;
-			}
-
-//#pragma acc loop seq private(kl)
-//                        for (kl = 0; kl < idimp; kl++) {
-//                           ppart[j2+nppmx*(kl+idimp*k)]
-//                           = ppart[j1+nppmx*(kl+idimp*k)];
-//                        }
-			//}
-                     //}
-		     }
-                  }
-               }
-            }
-/* accumulate number of holes filled */
-            kk += sj[nths-1];
-/* accumulate number of holes skipped over */
-            //ii = nths - ii;
-            ll += nths - sj[nths-1];
-         }
-/* update number of particles */
-      } // if (ip > 0)
-            //npp -= ip;
-/* set error and update particle */
-   //   if (threadIdx.x==0) {
-/* ppart overflow */
-//         if (nh[0] > 0)
-//            *irc = npp - ip;
-         kpic[k] = nsz;
-         ncl[k] = 0;  // uncommented this after debugging
-//	 ihole[ip+2+(ntmax+1)*(k+mxy1)] = ip;
-//	 ihole[ip+3+(ntmax+1)*(k+mxy1)] = nsz;
-
-      //}
-   } // for k-th tile
-//#pragma acc wait
-} // acc data
-//printf("done compacting particle array\n");
-//cgpuprinttile(ppart, ppbuff, kpic,
-//                            ncl, ihole, idimp, nppmx,
-//                            nx, ny, mx, my, mx1,
-//                            my1, npbmx, ntmax, irc, 1);
-   return;
+                        for (i = 0; i < PVW; i ++) {
+                            /* identify which particles at end to be moved */
+                            if (i < nths) {
+                                if (sj[i] - tid[i] == 1){
+                                    j1 = nsz + i + PVW*nn;
+                                    jj = sj[i] + kk - 1;
+                                    j2 = ihole[jj+1+(ntmax+1)*(k+mxy1)] - 1;
+                                    if (j2 < nsz) {
+                                        /* for some reason I have to manually unroll this loop for acc to work */
+                                        ppart[j2+nppmx*(  idimp*k)] = ppart[j1+nppmx*(  idimp*k)];
+                                        ppart[j2+nppmx*(1+idimp*k)] = ppart[j1+nppmx*(1+idimp*k)];
+                                        ppart[j2+nppmx*(2+idimp*k)] = ppart[j1+nppmx*(2+idimp*k)];
+                                        ppart[j2+nppmx*(3+idimp*k)] = ppart[j1+nppmx*(3+idimp*k)];
+                                        //#pragma acc loop seq private(kl)
+                                        //                        for (kl = 0; kl < idimp; kl++) {
+                                        //                           ppart[j2+nppmx*(kl+idimp*k)]
+                                        //                           = ppart[j1+nppmx*(kl+idimp*k)];
+                                        //                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    /* accumulate number of holes filled */
+                    kk += sj[nths-1];
+                    /* accumulate number of holes skipped over */
+                    ll += nths - sj[nths-1];
+                }
+            } // if (ip > 0)
+            kpic[k] = nsz;
+            ncl[k] = 0;  // uncommented this after debugging
+        } // for k-th tile
+    } // acc data
+    return;
 #undef NPBLK
 #undef PVW
 }
