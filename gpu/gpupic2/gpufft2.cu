@@ -208,7 +208,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
    if (isign < 0) {
 /* perform x fft */
       cfrc = cufftExecR2C(planrx,(cufftReal *)f,(cufftComplex *)f);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       if (cfrc) {
          printf("cufftExecR2C(-1) planrx error=%d\n",cfrc);
          exit(1);
@@ -218,7 +218,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
       crc = cudaGetLastError();
       gpusctpose4<<<dimGridtx,dimBlockt,ns>>>(f,g,ani,nxh1,ny,nxh1d,
                                               nyd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpusctpose4 error=%d:%s\n",crc,
@@ -228,7 +228,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
 /* perform y fft */
       cfrc = cufftExecC2C(plany,(cufftComplex *)g,(cufftComplex *)g,
                           CUFFT_FORWARD);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       if (cfrc) {
          printf("cufftExecC2C(-1) plany error=%d\n",cfrc);
          exit(1);
@@ -239,7 +239,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
 /* perform y fft */
       cfrc = cufftExecC2C(plany,(cufftComplex *)g,(cufftComplex *)g,
                           CUFFT_INVERSE);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       if (cfrc) {
          printf("cufftExecC2C(1) plany error=%d\n",cfrc);
          exit(1);
@@ -247,7 +247,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
 /* transpose g to f */
       crc = cudaGetLastError();
       gpuctpose4<<<dimGridty,dimBlockt,ns>>>(g,f,ny,nxh1,nyd,nxh1d);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4 error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -255,7 +255,7 @@ extern "C" void gpufft2rrcu(float2 f[], float2 g[], int isign,
       }
 /* perform x fft */
       cfrc = cufftExecC2R(planxr,(cufftComplex *)f,(cufftReal *)f);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       if (cfrc) {
          printf("cufftExecC2R(1) planxr error=%d\n",cfrc);
          exit(1);
@@ -290,7 +290,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
    if (isign < 0) {
 /* perform x fft */
       cfrc = cufftExecR2C(planrxn,(cufftReal *)fn,(cufftComplex *)fn);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       if (cfrc) {
          printf("cufftExecR2C(-1) planrxn error=%d\n",cfrc);
          exit(1);
@@ -300,7 +300,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
       crc = cudaGetLastError();
       gpusctpose4n<<<dimGridtx,dimBlockt,ns>>>(fn,gn,ani,nxh1,ny,ndim,
                                                nxh1d,nyd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpusctpose4n error=%d:%s\n",crc,
@@ -310,7 +310,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
 /* perform y fft */
       cfrc = cufftExecC2C(planyn,(cufftComplex *)gn,(cufftComplex *)gn,
                           CUFFT_FORWARD);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       if (cfrc) {
          printf("cufftExecC2C(-1) planyn error=%d\n",cfrc);
          exit(1);
@@ -321,7 +321,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
 /* perform y fft */
       cfrc = cufftExecC2C(planyn,(cufftComplex *)gn,(cufftComplex *)gn,
                           CUFFT_INVERSE);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       if (cfrc) {
          printf("cufftExecC2C(1) planyn error=%d\n",cfrc);
          exit(1);
@@ -330,7 +330,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
       crc = cudaGetLastError();
       gpuctpose4n<<<dimGridty,dimBlockt,ns>>>(gn,fn,ny,nxh1,ndim,nyd,
                                               nxh1d);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4n error=%d:%s\n",crc,
@@ -339,7 +339,7 @@ extern "C" void gpufft2rrcun(float2 fn[], float2 gn[], int isign,
       }
 /* perform x fft */
       cfrc = cufftExecC2R(planxrn,(cufftComplex *)fn,(cufftReal *)fn);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       if (cfrc) {
          printf("cufftExecC2R(1) planxrn error=%d\n",cfrc);
          exit(1);

@@ -10,55 +10,6 @@ extern int maxgsx;
 
 static cudaError_t crc;
 
-__global__ void printtile(float ppart[], float ppbuff[], int kpic[],
-                           int ncl[], int ihole[], int idimp, int nppmx,
-                           int mx1, int my1, int npbmx, int ntmax,
-                           int *irc, int idx) {
-/* this subroutine performs third step of a particle sort by x,y grid
-   in tiles of mx, my, where incoming particles from other tiles are
-   copied into ppart.
-   linear interpolation, with periodic boundary conditions
-   tiles are assumed to be arranged in 2D linear memory
-   input: all except irc
-   output: ppart, kpic, irc
-   ppart[k][i][n] = i co-ordinate of particle n in tile k
-   ppbuff[k][i][n] = i co-ordinate of particle n in tile k
-   kpic[k] = number of particles in tile k
-   ncl[k] = number of particles departing from tile k
-   ihole[0][k][:] = location of hole in array left by departing particle
-   ihole[1][k][:] = buffer for real holes at the end of ihole[0][k][:]
-   ihole[0][k][0] = ih, number of holes left (error, if negative)
-   idimp = size of phase space = 4
-   nppmx = maximum number of particles in tile
-   mx1 = (system length in x direction - 1)/mx + 1
-   my1 = (system length in y direction - 1)/my + 1
-   npbmx = size of buffer array ppbuff
-   ntmax = size of hole array for particles leaving tiles
-   irc = maximum overflow, returned only if error occurs, when irc > 0
-local data                                                            */
-   int mxy1, k, i;
-/* The sizes of the shared memory arrays are as follows: */
-   mxy1 = mx1*my1;
-/* k = tile number */
-   k = blockIdx.x + gridDim.x*blockIdx.y;
-if (k==idx){
-		//printf("ihole=\n");
-	if (threadIdx.x == 0){
-	printf("\nk=%d,ihole=%d,ncl=%d,kpic=%d,irc=%d\n",k,ihole[(ntmax+1)*k],ncl[k],kpic[k],*irc);
-	for (i = 0; i<ihole[(ntmax+1)*k]+1; i++)
-	  printf("%10d\t", ihole[(ntmax+1)*k+i+1]);
-	printf("\n-------------------------------\n");
-	for (i = 0; i<ihole[(ntmax+1)*k]+1; i++)
-	  printf("%10d\t", ihole[(ntmax+1)*(k+mxy1)+i]);
-	printf("\n-------------------------------\n");
-	for (i = 0; i<kpic[k]; i++)
-	  printf("%10d\t", int(ppart[i+nppmx*(4+idimp*k)]));
-	printf("\n\n\n");
-	}
-	
-}
-
-}
 /*--------------------------------------------------------------------*/
 __device__ void liscan2(int *isdata, int nths) {
 /* performs local prefix reduction of integer data shared by threads */
@@ -2210,7 +2161,7 @@ extern "C" void cgpuppush2l(float *ppart, float *fxy, int *kpic,
    gpuppush2l<<<dimGrid,dimBlock,ns>>>(ppart,fxy,kpic,qbm,dt,ek,idimp,
                                        nppmx,nx,ny,mx,my,nxv,nyv,mx1,
                                        mxy1,ipbc);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppush2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2240,7 +2191,7 @@ extern "C" void cgpuppushf2l(float *ppart, float *fxy, int *kpic,
    gpuppushf2l<<<dimGrid,dimBlock,ns>>>(ppart,fxy,kpic,ncl,ihole,qbm,dt,
                                         ek,idimp,nppmx,nx,ny,mx,my,nxv,
                                         nyv,mx1,mxy1,ntmax,irc);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppushf2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2265,7 +2216,7 @@ extern "C" void cgpu2ppost2l(float *ppart, float *q, int *kpic,
    crc = cudaGetLastError();
    gpu2ppost2l<<<dimGrid,dimBlock,ns>>>(ppart,q,kpic,qm,nppmx,idimp,mx,
                                         my,nxv,nyv,mx1,mxy1);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpu2ppost2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2282,7 +2233,7 @@ extern "C" void cgpucaguard2l(float2 *qc, float *q, int nx, int ny,
    dim3 dimGrid(ny);
    crc = cudaGetLastError();
    gpucaguard2l<<<dimGrid,dimBlock>>>(qc,q,nx,ny,nxe,nye,nxvh,nyv);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpucaguard2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2299,7 +2250,7 @@ extern "C" void cgpuccguard2l(float2 *fxyc, float *fxy, int nx, int ny,
    dim3 dimGrid(ny);
    crc = cudaGetLastError();
    gpuccguard2l<<<dimGrid,dimBlock>>>(fxyc,fxy,nx,ny,nxe,nye,nxvh,nyv);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuccguard2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2327,29 +2278,19 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
 //   cudaEventRecord(start);
    gpuppfnd2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,idimp,nppmx,
                                        nx,ny,mx,my,npbmx,mx1,my1,ntmax,irc);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppfnd2l error=%d:%s\n",crc,cudaGetErrorString(crc));
       exit(1);
    }
-   printf("printing....\n");
-   printtile<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
-                                       idimp,nppmx,mx1,my1,npbmx,ntmax,
-                                       irc,0);
-   cudaThreadSynchronize();
-	printf("********************************\n\n");
-   printf("\n");
-   printtile<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
-                                       idimp,nppmx,mx1,my1,npbmx,ntmax,
-                                       irc,1);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
 ///* buffer particles that are leaving tile and sum ncl */
 //   ns = 9*sizeof(int);
 //   crc = cudaGetLastError();
 //   //gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
 //   //                                    nppmx,mx1,my1,npbmx,ntmax,irc);
-///* cudaThreadSynchronize(); */
+///* cudaDeviceSynchronize(); */
 //   crc = cudaGetLastError();
 //   if (crc) {
 //      printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2361,7 +2302,7 @@ extern "C" void cgpuppord2l(float *ppart, float *ppbuff, int *kpic,
    gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
                                        idimp,nppmx,mx1,my1,npbmx,ntmax,
                                        irc);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppord2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2387,7 +2328,7 @@ extern "C" void cgpuppordf2l(float *ppart, float *ppbuff, int *kpic,
    crc = cudaGetLastError();
 //   gpuppmov2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,ncl,ihole,idimp,
 //                                       nppmx,mx1,my1,npbmx,ntmax,irc);
-/* cudaThreadSynchronize(); */
+/* cudaDeviceSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppmov2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2399,7 +2340,7 @@ extern "C" void cgpuppordf2l(float *ppart, float *ppbuff, int *kpic,
    gpuppord2l<<<dimGrid,dimBlock,ns>>>(ppart,ppbuff,kpic,ncl,ihole,
                                        idimp,nppmx,mx1,my1,npbmx,ntmax,
                                        irc);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpuppord2l error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2421,7 +2362,7 @@ extern "C"  void cgpupois22t(float2 *qt, float2 *fxyt, float2 *ffct,
    crc = cudaGetLastError();
    gpupois22t<<<dimGrid,dimBlock,ns>>>(qt,fxyt,ffct,we,nx,ny,nxvh,nyv,
                                        nxhd,nyhd);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpupois22t error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2461,7 +2402,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       gpufft2rcxs<<<dimGridy,dimBlock,ns>>>(f,isign,mixup,sct,indx,indy,
                                             nyi,ny,nxhd,nyd,nxhyd,nxyhd,
                                             nsize);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcxs error=%d:%s\n",
@@ -2472,7 +2413,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       ns = (mx+1)*mx*sizeof(float2);
       crc = cudaGetLastError();
       gpuctpose4<<<dimGridtx,dimBlockt,ns>>>(f,g,nxh1,ny,nxhd,nyd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4 error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2485,7 +2426,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       gpufft2rcys<<<dimGridx,dimBlock,ns>>>(g,isign,mixup,sct,indx,indy,
                                             nxi,nxh1,nxhd,nyd,nxhyd,
                                             nxyhd,nsize);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcys error=%d:%s\n",
@@ -2502,7 +2443,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       gpufft2rcys<<<dimGridx,dimBlock,ns>>>(g,isign,mixup,sct,indx,indy,
                                             nxi,nxh1,nxhd,nyd,nxhyd,
                                             nxyhd,nsize);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcys error=%d:%s\n",
@@ -2513,7 +2454,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       ns = (mx+1)*mx*sizeof(float2);
       crc = cudaGetLastError();
       gpuctpose4<<<dimGridty,dimBlockt,ns>>>(g,f,ny,nxh1,nyd,nxhd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4 error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2526,7 +2467,7 @@ extern "C" void cgpuwfft2rcs(float2 *f, float2 *g, int isign,
       gpufft2rcxs<<<dimGridy,dimBlock,ns>>>(f,isign,mixup,sct,indx,indy,
                                             nyi,ny,nxhd,nyd,nxhyd,nxyhd,
                                             nsize);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcxs error=%d:%s\n",
@@ -2574,7 +2515,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       gpufft2rcxs<<<dimGridy,dimBlock,ns>>>(fn,isign,mixup,sct,indx,
                                             indy,nyi,nyp,nxhd,nnyd,
                                             nxhyd,nxyhd,nsize);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcxs error=%d:%s\n",
@@ -2586,7 +2527,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       crc = cudaGetLastError();
       gpuctpose4n<<<dimGridtx,dimBlockt,ns>>>(fn,gn,nxh1,ny,ndim,nxhd,
                                               nyd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4n error=%d:%s\n",crc,
@@ -2600,7 +2541,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       gpufft2rcys<<<dimGridx,dimBlock,ns>>>(gn,isign,mixup,sct,indx,
                                             indy,nxi,nxp,nnxd,nyd,nxhyd,
                                             nxyhd,nsize);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcys error=%d:%s\n",
@@ -2617,7 +2558,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       gpufft2rcys<<<dimGridx,dimBlock,ns>>>(gn,isign,mixup,sct,indx,
                                             indy,nxi,nxp,nnxd,nyd,nxhyd,
                                             nxyhd,nsize);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcys error=%d:%s\n",
@@ -2629,7 +2570,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       crc = cudaGetLastError();
       gpuctpose4n<<<dimGridty,dimBlockt,ns>>>(gn,fn,ny,nxh1,ndim,nyd,
                                               nxhd);
-/*    cudaThreadSynchronize(); */
+/*    cudaDeviceSynchronize(); */
       crc = cudaGetLastError();
       if (crc) {
          printf("gpuctpose4n error=%d:%s\n",crc,
@@ -2643,7 +2584,7 @@ extern "C" void cgpuwfft2rcsn(float2 *fn, float2 *gn, int isign,
       gpufft2rcxs<<<dimGridy,dimBlock,ns>>>(fn,isign,mixup,sct,indx,
                                             indy,nyi,nyp,nxhd,nnyd,
                                             nxhyd,nxyhd,nsize);
-      cudaThreadSynchronize();
+      cudaDeviceSynchronize();
       crc = cudaGetLastError();
       if (crc) {
          printf("gpufft2rcxs error=%d:%s\n",
@@ -2686,7 +2627,7 @@ extern "C" void cgpusum2(float *a, float *sa, int nx) {
    ns = nblock_size*sizeof(float);
    crc = cudaGetLastError();
    gpusum2<<<dimGrid,dimBlock,ns>>>(a,scr,nx);
-/* cudaThreadSynchronize(); */
+/* cudaDeviceSynchronize(); */
    crc = cudaGetLastError();
    if (crc) {
       printf("gpusum2 error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -2695,7 +2636,7 @@ extern "C" void cgpusum2(float *a, float *sa, int nx) {
 /* 1d serial reduction */
    crc = cudaGetLastError();
    gpusum1<<<dimGrid1,dimBlock,ns>>>(scr,sa,nbx);
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("gpusum1 error=%d:%s\n",crc,cudaGetErrorString(crc));

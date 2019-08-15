@@ -16,14 +16,8 @@ int main(int argc, char *argv[]) {
 /* indx/indy = exponent which determines grid points in x/y direction: */
 /* nx = 2**indx, ny = 2**indy */
    int indx =   9, indy =   9;
-   //int indx =   5, indy =   5;
-   //int indx =   4, indy =   4;
 /* npx/npy = number of electrons distributed in x/y direction */
    int npx =  3072, npy =   3072;
-   //int npx =  768, npy =   768;
-   //int npx =  192, npy =   192;
-   //int npx =  96, npy =   96;
-   //int npx =  64, npy =   64;
 /* ndim = number of velocity coordinates = 2 */
    int ndim = 2;
 /* tend = time at end of simulation, in units of plasma frequency */
@@ -37,7 +31,7 @@ int main(int argc, char *argv[]) {
    float ax = .912871, ay = .912871;
 /* idimp = number of particle coordinates = 4 */
 /* ipbc = particle boundary condition: 1 = periodic */
-   int idimp = 5, ipbc = 1;
+   int idimp = 4, ipbc = 1;
 /* wke/we/wt = particle kinetic/electric field/total energy */
    float wke = 0.0, we = 0.0, wt = 0.0;
 /* mx/my = number of grids in x/y in sorting tiles */

@@ -184,10 +184,10 @@ extern "C" void gpu_set_cache_size(int nscache) {
       cpref = cudaFuncCachePreferShared;
    else if (nscache==2)
       cpref = cudaFuncCachePreferL1;
-   crc = cudaThreadSetCacheConfig(cpref);
+   crc = cudaDeviceSetCacheConfig(cpref);
 /* crc = cudaDeviceSetCacheConfig(cpref); */
    if (crc) {
-      printf("cudaThreadSetCacheConfig error=%d:%s\n",crc,
+      printf("cudaDeviceSetCacheConfig error=%d:%s\n",crc,
              cudaGetErrorString(crc));
    }
    return;
@@ -202,7 +202,7 @@ extern "C" void emptykernel() {
    dim3 dimGrid(ngx,ngy);
    crc = cudaGetLastError();
    emptyKernel<<<dimGrid,dimBlock>>>();
-   cudaThreadSynchronize();
+   cudaDeviceSynchronize();
    crc = cudaGetLastError();
    if (crc) {
       printf("emptyKernel error=%d:%s\n",crc,cudaGetErrorString(crc));
@@ -279,9 +279,9 @@ extern "C" void init_cu(int dev, int *irc) {
 /*--------------------------------------------------------------------*/
 extern "C" void end_cu() {
 /* terminate CUDA */
-   crc = cudaThreadExit();
+   crc = cudaDeviceReset();
    if (crc) {
-      printf("cudaThreadExit Error=%d:%s\n",crc,cudaGetErrorString(crc));
+      printf("cudaDeviceReset Error=%d:%s\n",crc,cudaGetErrorString(crc));
    }
    return;
 }
