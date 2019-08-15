@@ -2670,11 +2670,11 @@ local data                                                            */
 #define PVW               32
    int mxy1, ncoff, noff, moff, npoff, npp, ipp, joff, nhp;
    int i, j, k, m, ii, kx, ky, ih, ist, nn, mm;
-   int jj, ll, lll, nths;
+   int jj, ll, nths;
    int ip, j1, j2, kxl, kxr, kk, kl, kr, lb, kxs;
    int ni, nsz;
    float anx, any, edgelx, edgely, edgerx, edgery, dx, dy;
-   int ks[8];
+   int ks[9];
    int sj[PVW+1];
    int tid[PVW+1];
    //int nh[2];
@@ -2738,7 +2738,7 @@ private(k,ky,kk,kl,kr,kx,kxl,kxr,noff,moff,npp,npoff,nn,mm,edgelx,edgely,edgerx,
 
       nh = 0;
       //nh[1] = 0;
-      ihole[(ntmax+1)*k] = 0;
+      ks[8] = 0;
       ihole[(ntmax+1)*(k+mxy1)] = 0;
 /* reset the counter for number of particles comming in tile k */
          //nh[1] = 0;
@@ -2808,7 +2808,7 @@ private(j,ist,dx,dy,ih,kk,ii)
          if (ist > 0) {
             // register the ihole address
 #pragma acc atomic capture
-            ih = ihole[(ntmax+1)*k] ++;
+            ih = ks[8] ++;
             //ih = nh[1] ++;
             ih ++;
             //ih = atomicAdd(&nh[1],1);
@@ -2842,6 +2842,7 @@ private(j,ist,dx,dy,ih,kk,ii)
             }
          }
       }
+      ihole[(ntmax+1)*k] = ks[8];
 /* ihole overflow */
          //ih = nh[1];
          if (nh > 0) {
@@ -2879,7 +2880,7 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,nh)
       //if (threadIdx.x==0) {
          nh = 0;
          if (nsz >= nppmx)
-            nh = 1;
+            *irc = 1;
       //}
 /* synchronize threads */
       //__syncthreads();
@@ -2902,12 +2903,13 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,nh)
             j1 = ihole[ni+j+(ntmax+1)*k] - 1;
             if (j1 < nsz) {
 #pragma acc atomic capture
-               ii = ihole[(ntmax+1)*(k+mxy1)] ++;
+               ii = nh ++;
                ihole[ii+(ntmax+1)*(k+mxy1)+1] = j;
             }
          }
 	 //ihole[(ntmax+1)*(k+mxy1)] = nh[1];
       }
+      ihole[(ntmax+1)*(k+mxy1)] = nh;
    }
 //#pragma acc wait
 //printf("done buffering iholes\n");
@@ -2923,7 +2925,7 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,nh)
 //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) create(sj,tid) \
 //copyin(mxy1,idimp,nppmx,npbmx,ntmax)
 #pragma acc parallel loop gang vector_length(16) num_workers(32)\
-private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid)
+private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,nh)
 //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
    for (k = 0; k < mxy1; k++) {
       npp = kpic[k];
@@ -2931,6 +2933,7 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid)
       ni = ncl[k];
       ip = nhp - ni;
       nsz = npp - ip;
+      nh = ihole[(ntmax+1)*(k+mxy1)];
       //nh[1] = ihole[(ntmax+1)*(k+mxy1)];
 #pragma acc loop worker vector private(ii,ll,j,j1,j2)
       for (j = 0; j < ni; j ++) {
@@ -2960,7 +2963,7 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid)
          // position with j1
          else {
 #pragma acc atomic capture
-            ii = ihole[(ntmax+1)*(k+mxy1)] --;
+            ii = nh --;
             //ii = nh[1] --;
             //ii = atomicSub(&ist[1],1);
             ll = ihole[ii+(ntmax+1)*(k+mxy1)];
@@ -2980,6 +2983,7 @@ private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid)
          }
       }
       //ihole[(ntmax+1)*(k+mxy1)] = nh[1];
+      ihole[(ntmax+1)*(k+mxy1)] = nh;
    }
 //#pragma acc wait
 //printf("done importing incoming particles\n");
@@ -2993,7 +2997,7 @@ vector_length(PVW) num_workers(1)
 //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc) create(sj,tid) \
 //copyin(mxy1,idimp,nppmx,npbmx,ntmax)
 #pragma acc loop gang \
-private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,lll,nh,ii)
+private(k,npp,mm,nhp,ni,ip,nsz,ip,sj,tid,ll,nh,ii)
 //deviceptr(ppart,ppbuff,kpic,ncl,ihole,irc)
    for (k = 0; k < mxy1; k++) {
       npp = kpic[k];
