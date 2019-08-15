@@ -15,10 +15,15 @@ void dtimer(double *time, struct timeval *itime, int icntrl);
 int main(int argc, char *argv[]) {
 /* indx/indy = exponent which determines grid points in x/y direction: */
 /* nx = 2**indx, ny = 2**indy */
-   int indx =   4, indy =   4;
+   int indx =   9, indy =   9;
+   //int indx =   5, indy =   5;
+   //int indx =   4, indy =   4;
 /* npx/npy = number of electrons distributed in x/y direction */
-   //int npx =  3072, npy =   3072;
-   int npx =  96, npy =   96;
+   int npx =  3072, npy =   3072;
+   //int npx =  768, npy =   768;
+   //int npx =  192, npy =   192;
+   //int npx =  96, npy =   96;
+   //int npx =  64, npy =   64;
 /* ndim = number of velocity coordinates = 2 */
    int ndim = 2;
 /* tend = time at end of simulation, in units of plasma frequency */
@@ -32,13 +37,13 @@ int main(int argc, char *argv[]) {
    float ax = .912871, ay = .912871;
 /* idimp = number of particle coordinates = 4 */
 /* ipbc = particle boundary condition: 1 = periodic */
-   int idimp = 4, ipbc = 1;
+   int idimp = 5, ipbc = 1;
 /* wke/we/wt = particle kinetic/electric field/total energy */
    float wke = 0.0, we = 0.0, wt = 0.0;
 /* mx/my = number of grids in x/y in sorting tiles */
    int mx = 16, my = 16;
 /* xtras = fraction of extra particles needed for particle management */
-   float xtras = 0.2;
+   float xtras = 2.2;
 /* declare scalars for standard code */
    int np, nx, ny, nxh, nyh, nxh1, nxe, nye, nxeh, nxyh, nxhy;
    int mx1, my1, mxy1, ntime, nloop, isign;
@@ -228,6 +233,7 @@ int main(int argc, char *argv[]) {
 
 /* prepare utility array */
    gpu_zfmem(g_ncl,8*mxy1);
+   gpu_zfmem(g_ppbuff,npbmx*idimp*mxy1);
 
 /* * * * start main iteration loop * * * */
 
@@ -304,13 +310,11 @@ L500: if (nloop <= ntime)
 /* reorder particles by tile with GPU code: */
       dtimer(&dtime,&itime,-1);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, g_ihole,and g_irc */
-      printf("before sorting ...\n");
       cgpuppord2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0,
                   nx,ny,mx,my,mx1,my1,npbmx,ntmax,g_irc);
 /* updates g_ppart, g_ppbuff, g_kpic, g_ncl, and g_irc */
 /*    cgpuppordf2l(g_ppart,g_ppbuff,g_kpic,g_ncl,g_ihole,idimp,nppmx0, */
 /*                 mx1,my1,npbmx,ntmax,g_irc);                         */
-      printf("after sorting ...\n");
       dtimer(&dtime,&itime,1);
       time = (float) dtime;
       tsort += time;

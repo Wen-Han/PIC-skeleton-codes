@@ -124,6 +124,7 @@ local data                                                            */
    for (j = 0; j < npxy; j++) {
       part[2+idimp*j] = vtx*ranorm();
       part[3+idimp*j] = vty*ranorm();
+      part[4+idimp*j] = j+1;
    }
 /* add correct drift */
    dsum1 = 0.0;

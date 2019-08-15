@@ -111,10 +111,11 @@
 
 # Makefile PGI compiler with Linux
 
-FC90 = pgf90 -acc -Minfo=accel -ta=tesla,cuda9.2
-FC03 = pgf90 -acc -Minfo=accel -ta=tesla,cuda9.2
-# CC = pgcc -acc -Minfo=accel -ta=nvidia,keepgpu,keepptx,nollvm
-CC = pgcc -acc -Minfo=accel -ta=tesla,cuda9.2
+FC90 = pgf90 -acc -Minfo=accel -ta=tesla,cuda10.0
+FC03 = pgf90 -acc -Minfo=accel -ta=tesla,cuda10.0
+#CC = pgcc -acc -Minfo=accel -ta=nvidia,keepgpu,keepptx,nollvm
+#CC = pgcc -acc -Minfo=accel -ta=tesla,cuda10.0,gvmode -Mcuda
+CC = pgcc -acc -Minfo=accel -ta=tesla,cuda10.0
 
 OPTS90 = -O3
 OPTS90 = -O3 -r8
@@ -127,7 +128,7 @@ OPTS03 = -O3 -Mbounds -r8 -Mstandard
 CCOPTS = -O3
 
 # # CUDA
-CUDAHOME = /opt/packages/cuda/9.2
+CUDAHOME = /opt/packages/cuda/10.0
 LOPTS =
 CULIBS = -L$(CUDAHOME)/lib64 -lcudart -lcufft
 NVOPTS = -O3 -arch sm_60
@@ -162,9 +163,9 @@ fgpupic2 : fgpupic2.o gpulib2.o gpupush2.o gpufft2.o fpush2.o \
 	gpulib2.o gpupush2.o gpufft2.o fpush2.o gpulib2_h.o \
 	gpupush2_h.o gpufft2_h.o push2_h.o dtimer.o $(CULIBS)
 
-caccpic2 : cgpupic2.o gpulib2.o cudagpupush2.o gpufft2.o cpush2.o \
+caccpic2 : cgpupic2.o gpulib2.o cudagpupush2.o gpufft2.o cpush2.o gpudebug.o \
            dtimer.o caccpush2.o
-	$(CC) $(CCOPTS) $(LOPTS) -o caccpic2 cgpupic2.o caccpush2.o \
+	$(CC) $(CCOPTS) $(LOPTS) -o caccpic2 cgpupic2.o caccpush2.o gpudebug.o \
 	gpulib2.o cudagpupush2.o gpufft2.o cpush2.o dtimer.o $(CULIBS) -lm
 
 cgpupic2 : cgpupic2.o gpulib2.o gpupush2.o gpufft2.o cpush2.o \
@@ -194,6 +195,9 @@ gpupush2.o : gpupush2.cu
 
 gpufft2.o : gpufft2.cu
 	nvcc $(NVOPTS) -c gpufft2.cu -I$(CUDAHOME)/include
+
+gpudebug.o : gpudebug.cu
+	nvcc $(NVOPTS) -c gpudebug.cu -I$(CUDAHOME)/include
 
 gpulib2_h.o : gpulib2_h.f90
 	$(FC90) $(OPTS90) -c gpulib2_h.f90

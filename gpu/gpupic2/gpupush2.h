@@ -45,3 +45,4 @@ void cgpuwfft2rcsn(float complex fn[], float complex gn[], int isign,
                    int ndim, int nxhd, int nyd, int nxhyd, int nxyhd);
 
 void cgpusum2(float a[], float *sa, int nx);
+
