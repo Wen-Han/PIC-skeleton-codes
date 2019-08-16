@@ -6,7 +6,6 @@
 #include <complex.h>
 #include <math.h>
 #include "gpupush2.h"
-#include "gpudebug.h"
 
 /*--------------------------------------------------------------------*/
 #pragma acc routine worker
